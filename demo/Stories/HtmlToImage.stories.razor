@@ -10,7 +10,7 @@
         <Template>
             <CapturePlayground TestId="png"
                                Kind="CapturePlayground.CaptureKind.Png"
-                               Hint="Press Capture. The panel reports the real PNG dimensions read from the IHDR chunk, not what the DOM measured." />
+                               Hint="ToPngBytesAsync captures the element as PNG bytes, streamed over JS interop instead of base64. Press Capture - the panel reports the real dimensions read from the PNG's own IHDR header, not what the DOM measured." />
         </Template>
     </Story>
 
@@ -24,7 +24,7 @@
             <CapturePlayground TestId="pixel-ratio"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_pixelRatioOptions"
-                               Hint="PixelRatio = 3 against a 320px-wide element - expect a 960px-wide PNG." />
+                               Hint="PixelRatio multiplies output resolution while the element keeps its CSS size - what makes a shared poster look sharp. Ratio 3 against this 320px-wide poster produces a 960px-wide PNG." />
         </Template>
     </Story>
 
@@ -40,7 +40,7 @@
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_excludeOptions"
                                ShowExcludedBadge="true"
-                               Hint="The red badge is in the DOM but carries capture-ignore, so it is absent from the captured image - and the output is shorter as a result." />
+                               Hint="ExcludeCssClasses drops matching elements and their whole subtrees from the capture. The red badge is in the live DOM but carries capture-ignore, so the captured image has no badge and is measurably shorter." />
         </Template>
     </Story>
 
@@ -53,7 +53,8 @@
         <Template>
             <CapturePlayground TestId="background"
                                Kind="CapturePlayground.CaptureKind.Png"
-                               Options="_backgroundOptions" />
+                               Options="_backgroundOptions"
+                               Hint="BackgroundColor paints a backdrop behind the captured element - any CSS colour, here #ffd166. Essential for JPEG, which has no alpha channel and renders transparency as black." />
         </Template>
     </Story>
 
@@ -66,7 +67,7 @@
             <CapturePlayground TestId="jpeg"
                                Kind="CapturePlayground.CaptureKind.Jpeg"
                                Options="_jpegOptions"
-                               Hint="Quality 0.5 - the panel reports the resulting byte length." />
+                               Hint="ToJpegBytesAsync captures as JPEG; Quality (0-1, here 0.5) trades fidelity for size before an upload. The panel confirms JPEG magic bytes and the byte length - compare it with the PNG story's." />
         </Template>
     </Story>
 
@@ -78,7 +79,8 @@
         </Description>
         <Template>
             <CapturePlayground TestId="svg"
-                               Kind="CapturePlayground.CaptureKind.Svg" />
+                               Kind="CapturePlayground.CaptureKind.Svg"
+                               Hint="ToSvgAsync inlines the element into an SVG foreignObject and returns it as a data URL - resolution-independent, so it scales without pixelation. The preview below is that SVG rendered back by the browser." />
         </Template>
     </Story>
 
@@ -91,7 +93,7 @@
         <Template>
             <CapturePlayground TestId="pixel-data"
                                Kind="CapturePlayground.CaptureKind.PixelData"
-                               Hint="No preview: these are raw RGBA bytes, not an encoded image." />
+                               Hint="ToPixelDataAsync returns raw RGBA bytes, four per pixel in row-major order - for analysis rather than display, so there is no preview. Byte length equals width times height times 4." />
         </Template>
     </Story>
 
@@ -105,7 +107,7 @@
         <Template>
             <CapturePlayground TestId="canvas"
                                Kind="CapturePlayground.CaptureKind.Canvas"
-                               Hint="The panel reports the canvas element's own width and height, read back over interop." />
+                               Hint="ToCanvasAsync returns the live HTMLCanvasElement as an IJSObjectReference, for handing to other JavaScript (a WebGL texture, a custom encoder). The panel reports the canvas element's own width and height, read back over interop - then the reference is disposed." />
         </Template>
     </Story>
 
@@ -126,7 +128,7 @@
                                Kind="CapturePlayground.CaptureKind.Png"
                                ShowBrokenImage="true"
                                Options="_placeholderOptions"
-                               Hint="The poster contains an image that cannot resolve. The panel counts what ImageLoadFailed reported." />
+                               Hint="The ImageLoadFailed event reports every image that fails to load during a capture (upstream's onImageErrorHandler, reshaped). The poster contains a deliberately unresolvable image - the panel counts what the event delivered, and the capture still completes." />
         </Template>
     </Story>
 
@@ -140,7 +142,7 @@
             <CapturePlayground TestId="size"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_sizeOptions"
-                               Hint="Rendered at 260x160, exported onto a 520x320 canvas." />
+                               Hint="Width/Height resize the element before rendering; CanvasWidth/CanvasHeight size the output canvas independently. Here: rendered at 260x160, exported onto a 520x320 canvas - one element size, another export size." />
         </Template>
     </Story>
 
@@ -155,7 +157,7 @@
             <CapturePlayground TestId="style"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_styleOptions"
-                               Hint="Captured with a forced border radius and rotation that are not applied on screen." />
+                               Hint="Style copies CSS onto the element only for the capture - here a border radius and rotation that are NOT applied on screen. IncludeStyleProperties narrows which computed properties get copied at all, the main speed lever on large subtrees." />
         </Template>
     </Story>
 
@@ -170,7 +172,7 @@
             <CapturePlayground TestId="fonts"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_fontOptions"
-                               Hint="Fonts skipped and caches bypassed - the fastest configuration for a capture with no custom typography." />
+                               Hint="SkipFonts avoids downloading and embedding web fonts entirely; PreferredFontFormat narrows the embed to one format; CacheBust and IncludeQueryParams control how resource URLs are cached. Together: the fastest configuration for a capture with no custom typography." />
         </Template>
     </Story>
 
@@ -185,7 +187,7 @@
             <CapturePlayground TestId="fetch"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_fetchOptions"
-                               Hint="Resources fetched with credentials omitted and CORS mode explicit." />
+                               Hint="FetchRequestInit applies request options (CORS mode, credentials, cache, referrer) to every resource fetched while inlining the subtree - the fix when images or fonts come back blank for permission reasons. Here: cors mode, credentials omitted, cache bypassed." />
         </Template>
     </Story>
 
