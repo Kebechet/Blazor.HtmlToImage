@@ -23,7 +23,7 @@
     <PackageTags>blazor;html-to-image;screenshot;png;jpeg;svg;dom-to-image;canvas;share</PackageTags>
     <!-- First three parts track the bundled html-to-image release; the fourth is this wrapper's own revision. -->
     <Version>1.11.13</Version>
-    <PackageReleaseNotes>Initial release. Wraps html-to-image 1.11.13 - ToPng/ToJpeg/ToSvg/ToBlob/ToPixelData plus GetFontEmbedCss, over ElementReference or element id. 18 of 20 upstream options are modelled; the JS-only `filter` callback is exposed as ExcludeCssClasses/ExcludeSelector.</PackageReleaseNotes>
+    <PackageReleaseNotes>Initial release. Wraps html-to-image 1.11.13 with complete coverage - all 7 entry points and all 20 options are reachable, over ElementReference or element id. ToPng/ToJpeg/ToSvg return data URLs; To*BytesAsync stream raw bytes over JS interop instead of base64; ToPixelDataAsync returns raw RGBA; ToCanvasAsync hands back the live HTMLCanvasElement; GetFontEmbedCssAsync enables font-CSS reuse across captures. Three options are reshaped because their upstream form is a JS value: filter becomes ExcludeCssClasses/ExcludeSelector, onImageErrorHandler becomes the ImageLoadFailed event, fetchRequestInit becomes a typed FetchRequestInit. JPEG bytes deliberately bypass upstream's toBlob, which drops type and quality. Verified by 13 real-browser Playwright tests plus unit tests.</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
