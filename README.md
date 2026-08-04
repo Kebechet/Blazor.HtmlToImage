@@ -98,20 +98,24 @@ foreach (var frame in frames)
 
 ## Coverage vs. html-to-image 1.11.13
 
-This wrapper exposes a curated subset of html-to-image, not the whole API.
+**Complete.** Every upstream entry point and every option is reachable.
 
 | Axis | html-to-image | This package |
 |---|---:|---:|
-| Entry points | 7 | 6 |
-| Options | 20 | 18 |
+| Entry points | 7 | 7 |
+| Options | 20 | 20 |
 
-**Covered entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS`, and `toCanvas` (used internally to back the `To*BytesAsync` methods - see below).
+**Entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS` and `toCanvas` map to `ToPngAsync`, `ToJpegAsync`, `ToSvgAsync`, `ToPixelDataAsync`, `GetFontEmbedCssAsync` and `ToCanvasAsync`. `toBlob`'s role is served by `ToPngBytesAsync` / `ToJpegBytesAsync`, which route through `toCanvas` to work around an upstream bug - see the deviation note below.
 
-**Not covered:** `toBlob`, deliberately - see the deviation note below. `toCanvas` is not surfaced directly either, since a live `HTMLCanvasElement` has no meaningful .NET representation; if you need the canvas itself, capture with `ToPngAsync` and draw the data URL onto your own.
+**Options:** all 20, though three are reshaped because their upstream form is a JavaScript value that cannot cross interop as data:
 
-**Covered options:** `width`, `height`, `backgroundColor`, `canvasWidth`, `canvasHeight`, `style`, `includeStyleProperties`, `quality`, `cacheBust`, `includeQueryParams`, `imagePlaceholder`, `pixelRatio`, `skipFonts`, `preferredFontFormat`, `fontEmbedCSS`, `skipAutoScale`, `type`, and `filter` (reshaped into `ExcludeCssClasses` / `ExcludeSelector`).
+| Upstream | Here | Why |
+|---|---|---|
+| `filter` | `ExcludeCssClasses`, `ExcludeSelector` | A JS predicate would need an interop round-trip per DOM node; these compile into one filter function |
+| `onImageErrorHandler` | `ImageLoadFailed` event | A JS callback cannot be an option value; wired through a `DotNetObjectReference` only while subscribed |
+| `fetchRequestInit` | `FetchRequestInit` class | Models the data-carrying members; `signal`, `body` and `window` are live JS objects with no data form |
 
-**Not covered:** `fetchRequestInit` and `onImageErrorHandler`. Both take JavaScript-only values - a `RequestInit` object and an error-event callback - with no interop-friendly shape. Unlike a component wrapper there is no `AdditionalAttributes` escape hatch here, so these two are genuinely unreachable; open an issue if you need them and they can be modelled explicitly.
+⚠️ **`ImageLoadFailed` and `ImagePlaceholder` are alternatives, not complements.** Upstream resolves a failed URL to the placeholder *before* assigning it to the cloned image, so with a placeholder set the clone loads successfully and the error never fires. Pick reporting or papering over. Pinned by `ImageLoadFailed_ReportsAnImageThatCouldNotResolve`.
 
 Coverage is measured against html-to-image's published type definitions - `lib/index.d.ts` for entry points, `lib/types.d.ts` for the `Options` interface - excluding underscore-prefixed internals. Re-checked on every upstream version bump.
 

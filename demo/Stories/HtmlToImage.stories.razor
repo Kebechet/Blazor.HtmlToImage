@@ -95,6 +95,100 @@
         </Template>
     </Story>
 
+    <Story Name="Canvas">
+        <Description>
+            <code>ToCanvasAsync</code> returns the live <code>HTMLCanvasElement</code> as an
+            <code>IJSObjectReference</code>, for handing to other JavaScript - a WebGL texture, a
+            custom encoder, a compositing step. You own the reference: dispose it, or the canvas and
+            its backing bitmap outlive the capture.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="canvas"
+                               Kind="CapturePlayground.CaptureKind.Canvas"
+                               Hint="The panel reports the canvas element's own width and height, read back over interop." />
+        </Template>
+    </Story>
+
+    <Story Name="Broken images">
+        <Description>
+            Upstream's <code>onImageErrorHandler</code> is a JavaScript callback, so it cannot be an
+            option value. It is surfaced as the <code>ImageLoadFailed</code> event instead, wired only
+            while something is subscribed - an unsubscribed capture passes no
+            <code>DotNetObjectReference</code> and pays no interop cost.
+            <br /><br />
+            <strong>This event and <code>ImagePlaceholder</code> are alternatives, not
+            complements.</strong> Upstream resolves a failed URL to the placeholder <em>before</em>
+            assigning it to the cloned image, so with a placeholder set the clone loads successfully
+            and the error never fires. Choose reporting or papering over, not both.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="broken"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               ShowBrokenImage="true"
+                               Options="_placeholderOptions"
+                               Hint="The poster contains an image that cannot resolve. The panel counts what ImageLoadFailed reported." />
+        </Template>
+    </Story>
+
+    <Story Name="Explicit size">
+        <Description>
+            <code>Width</code> and <code>Height</code> are applied to the node before rendering, while
+            <code>CanvasWidth</code> and <code>CanvasHeight</code> size the output canvas. Setting
+            both is how you render a element at one size and export it at another.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="size"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_sizeOptions"
+                               Hint="Rendered at 260x160, exported onto a 520x320 canvas." />
+        </Template>
+    </Story>
+
+    <Story Name="Style overrides">
+        <Description>
+            <code>Style</code> copies CSS properties onto the node just for the capture, so the
+            exported image can differ from what is on screen. <code>IncludeStyleProperties</code>
+            narrows which computed properties get copied at all, which is the main lever when
+            capturing a large subtree feels slow.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="style"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_styleOptions"
+                               Hint="Captured with a forced border radius and rotation that are not applied on screen." />
+        </Template>
+    </Story>
+
+    <Story Name="Fonts and caching">
+        <Description>
+            <code>SkipFonts</code> avoids downloading and embedding web fonts entirely - much faster
+            when the capture uses none. <code>PreferredFontFormat</code> narrows the embed to one
+            format. <code>CacheBust</code> and <code>IncludeQueryParams</code> control how resource
+            URLs are keyed, which is what to reach for when a capture keeps picking up a stale image.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="fonts"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_fontOptions"
+                               Hint="Fonts skipped and caches bypassed - the fastest configuration for a capture with no custom typography." />
+        </Template>
+    </Story>
+
+    <Story Name="Fetch request init">
+        <Description>
+            <code>FetchRequestInit</code> applies request options to every resource html-to-image
+            fetches while inlining the subtree. Set it when images or fonts need credentials or a
+            specific CORS mode - the usual reason an otherwise-correct capture comes back with blank
+            images.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="fetch"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_fetchOptions"
+                               Hint="Resources fetched with credentials omitted and CORS mode explicit." />
+        </Template>
+    </Story>
+
 </Stories>
 
 @code {
@@ -121,4 +215,56 @@
         BackgroundColor = "#101418",
         PixelRatio = 1,
     };
+    private readonly HtmlToImageOptions _placeholderOptions = new()
+    {
+        // Deliberately NO ImagePlaceholder. Upstream resolves a failed URL to the placeholder
+        // BEFORE assigning it to the cloned image, so the clone loads successfully and onerror -
+        // and therefore ImageLoadFailed - never fires. The two options are alternatives, not
+        // complements: a placeholder papers over the failure instead of reporting it.
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _sizeOptions = new()
+    {
+        Width = 260,
+        Height = 160,
+        CanvasWidth = 520,
+        CanvasHeight = 320,
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _styleOptions = new()
+    {
+        Style = new Dictionary<string, string>
+        {
+            ["borderRadius"] = "36px",
+            ["transform"] = "rotate(-2deg)",
+        },
+        IncludeStyleProperties = ["color", "background", "font", "border-radius", "transform", "padding"],
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _fontOptions = new()
+    {
+        SkipFonts = true,
+        PreferredFontFormat = "woff2",
+        CacheBust = true,
+        IncludeQueryParams = true,
+        SkipAutoScale = true,
+        Type = "image/png",
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _fetchOptions = new()
+    {
+        FetchRequestInit = new FetchRequestInit
+        {
+            Mode = "cors",
+            Credentials = "omit",
+            Cache = "no-store",
+            ReferrerPolicy = "no-referrer",
+        },
+        PixelRatio = 1,
+    };
+
 }

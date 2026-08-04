@@ -74,34 +74,42 @@ function buildFilter(excludeCssClasses, excludeSelector) {
  * through would override html-to-image's own defaults with null - so unset members are dropped
  * here rather than forwarded.
  */
-function buildOptions(options) {
+function buildOptions(options, errorListener) {
 	const result = {};
-	if (!options) {
-		return result;
+	if (options) {
+		for (const [key, value] of Object.entries(options)) {
+			if (value === null || value === undefined) {
+				continue;
+			}
+			if (key === 'excludeCssClasses' || key === 'excludeSelector') {
+				continue;
+			}
+			result[key] = value;
+		}
+
+		const filter = buildFilter(options.excludeCssClasses, options.excludeSelector);
+		if (filter) {
+			result.filter = filter;
+		}
 	}
 
-	for (const [key, value] of Object.entries(options)) {
-		if (value === null || value === undefined) {
-			continue;
-		}
-		if (key === 'excludeCssClasses' || key === 'excludeSelector') {
-			continue;
-		}
-		result[key] = value;
-	}
-
-	const filter = buildFilter(options.excludeCssClasses, options.excludeSelector);
-	if (filter) {
-		result.filter = filter;
+	// Upstream's onImageErrorHandler is a JS callback, so it cannot be an option value on the .NET
+	// side. It is wired here only when something is subscribed - an unsubscribed capture passes no
+	// reference and therefore pays no interop cost per failed image.
+	if (errorListener) {
+		result.onImageErrorHandler = (event) => {
+			const url = event?.target?.src ?? event?.currentTarget?.src ?? String(event ?? '');
+			errorListener.invokeMethodAsync('OnImageLoadFailed', url);
+		};
 	}
 
 	return result;
 }
 
-export async function toDataUrl(target, format, options) {
+export async function toDataUrl(target, format, options, errorListener) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
-	const resolvedOptions = buildOptions(options);
+	const resolvedOptions = buildOptions(options, errorListener);
 
 	switch (format) {
 		case 'png':
@@ -123,10 +131,10 @@ export async function toDataUrl(target, format, options) {
  * re-wraps an already-wrapped marker object, which is neither a Blob nor a typed array, and the
  * call dies with "Supplied value is not a typed array or blob."
  */
-export async function toStream(target, format, options) {
+export async function toStream(target, format, options, errorListener) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
-	const resolvedOptions = buildOptions(options);
+	const resolvedOptions = buildOptions(options, errorListener);
 
 	if (format === 'pixelData') {
 		const pixels = await library.toPixelData(node, resolvedOptions);
@@ -149,8 +157,18 @@ export async function toStream(target, format, options) {
 	return blob;
 }
 
-export async function getFontEmbedCss(target, options) {
+export async function getFontEmbedCss(target, options, errorListener) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
-	return await library.getFontEmbedCSS(node, buildOptions(options));
+	return await library.getFontEmbedCSS(node, buildOptions(options, errorListener));
+}
+
+/**
+ * Returns the live HTMLCanvasElement. Blazor marshals it as an IJSObjectReference, so the caller
+ * owns it and must dispose - otherwise the canvas and its backing bitmap outlive the capture.
+ */
+export async function toCanvas(target, options, errorListener) {
+	const library = await getLibrary();
+	const node = resolveNode(target);
+	return await library.toCanvas(node, buildOptions(options, errorListener));
 }

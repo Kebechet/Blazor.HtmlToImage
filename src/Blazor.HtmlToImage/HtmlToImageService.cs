@@ -19,7 +19,56 @@ public sealed class HtmlToImageService : IHtmlToImageService
     private readonly SemaphoreSlim _moduleLock = new(1, 1);
 
     private IJSObjectReference? _module;
+    private DotNetObjectReference<HtmlToImageService>? _selfRef;
     private bool _isDisposed;
+
+    /// <inheritdoc />
+    public event Action<string>? ImageLoadFailed;
+
+    /// <summary>
+    /// Invoked from JS for each image that fails to load during a capture. Public because
+    /// <c>[JSInvokable]</c> requires it; not part of the interface.
+    /// </summary>
+    [JSInvokable]
+    public void OnImageLoadFailed(string url)
+    {
+        ImageLoadFailed?.Invoke(url);
+    }
+
+    /// <inheritdoc />
+    public Task<IJSObjectReference> ToCanvasAsync(ElementReference element, HtmlToImageOptions? options = null)
+    {
+        return CaptureCanvas(element, options);
+    }
+
+    /// <inheritdoc />
+    public Task<IJSObjectReference> ToCanvasAsync(string elementId, HtmlToImageOptions? options = null)
+    {
+        return CaptureCanvas(elementId, options);
+    }
+
+    private async Task<IJSObjectReference> CaptureCanvas(object target, HtmlToImageOptions? options)
+    {
+        var module = await GetModule();
+        return await module.InvokeAsync<IJSObjectReference>("toCanvas", target, options, ErrorListener);
+    }
+
+    /// <summary>
+    /// The reference JS reports failed images through, or null when nothing is subscribed - so an
+    /// unsubscribed capture creates no <c>DotNetObjectReference</c> and pays no interop cost.
+    /// </summary>
+    private DotNetObjectReference<HtmlToImageService>? ErrorListener
+    {
+        get
+        {
+            if (ImageLoadFailed is null)
+            {
+                return null;
+            }
+
+            return _selfRef ??= DotNetObjectReference.Create(this);
+        }
+    }
 
     /// <summary>Creates the service. Prefer <c>AddHtmlToImage()</c> over constructing it directly.</summary>
     public HtmlToImageService(IJSRuntime jsRuntime)
@@ -103,27 +152,27 @@ public sealed class HtmlToImageService : IHtmlToImageService
     public async Task<string> GetFontEmbedCssAsync(ElementReference element, HtmlToImageOptions? options = null)
     {
         var module = await GetModule();
-        return await module.InvokeAsync<string>("getFontEmbedCss", element, options);
+        return await module.InvokeAsync<string>("getFontEmbedCss", element, options, ErrorListener);
     }
 
     /// <inheritdoc />
     public async Task<string> GetFontEmbedCssAsync(string elementId, HtmlToImageOptions? options = null)
     {
         var module = await GetModule();
-        return await module.InvokeAsync<string>("getFontEmbedCss", elementId, options);
+        return await module.InvokeAsync<string>("getFontEmbedCss", elementId, options, ErrorListener);
     }
 
     private async Task<string> CaptureDataUrl(object target, CaptureFormat format, HtmlToImageOptions? options)
     {
         var module = await GetModule();
-        return await module.InvokeAsync<string>("toDataUrl", target, format.ToJsName(), options);
+        return await module.InvokeAsync<string>("toDataUrl", target, format.ToJsName(), options, ErrorListener);
     }
 
     private async Task<byte[]> CaptureBytes(object target, CaptureFormat format, HtmlToImageOptions? options)
     {
         var module = await GetModule();
         await using var streamReference = await module.InvokeAsync<IJSStreamReference>(
-            "toStream", target, format.ToJsName(), options);
+            "toStream", target, format.ToJsName(), options, ErrorListener);
 
         await using var stream = await streamReference.OpenReadStreamAsync(_maxStreamBytes);
         using var buffer = new MemoryStream();
@@ -179,6 +228,8 @@ public sealed class HtmlToImageService : IHtmlToImageService
             _module = null;
         }
 
+        _selfRef?.Dispose();
+        _selfRef = null;
         _moduleLock.Dispose();
     }
 }

@@ -1,3 +1,4 @@
+@implements IDisposable
 @inject IHtmlToImageService _htmlToImage
 
 <div class="demo-stack">
@@ -13,6 +14,12 @@
             <span>Bench press</span>
             <span>PR</span>
         </div>
+        @if (ShowBrokenImage)
+        {
+            @* Deliberately unresolvable. html-to-image reports it through onImageErrorHandler, and
+               ImagePlaceholder decides whether the output shows a gap or the placeholder art. *@
+            <img src="does-not-exist-anywhere.png" alt="" width="40" height="40" />
+        }
         @if (ShowExcludedBadge)
         {
             @* Carries the class the story passes as ExcludeCssClasses, so a correct capture drops
@@ -54,9 +61,31 @@
     [Parameter]
     public bool ShowExcludedBadge { get; set; }
 
+    /// <summary>Adds an image whose URL cannot resolve, so the ImageLoadFailed event has something to report.</summary>
+    [Parameter]
+    public bool ShowBrokenImage { get; set; }
+
     private ElementReference _poster;
     private string _previewDataUrl = string.Empty;
     private string _stateJson = "{}";
+    private readonly List<string> _failedImages = [];
+
+    protected override void OnInitialized()
+    {
+        // Subscribing is what makes the wrapper wire onImageErrorHandler at all - without a
+        // subscriber it passes no DotNetObjectReference and the capture pays no interop cost.
+        _htmlToImage.ImageLoadFailed += OnImageLoadFailed;
+    }
+
+    private void OnImageLoadFailed(string url)
+    {
+        _failedImages.Add(url);
+    }
+
+    public void Dispose()
+    {
+        _htmlToImage.ImageLoadFailed -= OnImageLoadFailed;
+    }
 
     private async Task Capture()
     {
@@ -81,6 +110,28 @@
                     _previewDataUrl = svgDataUrl;
                     WriteSvgState(svgDataUrl);
                     break;
+
+                case CaptureKind.Canvas:
+                    // The reference owns a real DOM element, so it is disposed as soon as the demo has
+                    // read what it needs - otherwise the canvas and its bitmap outlive the capture.
+                    await using (var canvas = await _htmlToImage.ToCanvasAsync(_poster, Options))
+                    {
+                        var width = await canvas.GetValueAsync<int>("width");
+                        var height = await canvas.GetValueAsync<int>("height");
+                        _previewDataUrl = string.Empty;
+                        _stateJson = Serialize(new Dictionary<string, object?>
+                        {
+                            ["hasCaptured"] = true,
+                            ["format"] = "canvas",
+                            ["width"] = width,
+                            ["height"] = height,
+                            ["failedImages"] = _failedImages.Count,
+                            ["error"] = null,
+                        });
+                    }
+                    break;
+
+
 
                 case CaptureKind.PixelData:
                     var pixels = await _htmlToImage.ToPixelDataAsync(_poster, Options);
@@ -112,6 +163,7 @@
             ["isJpeg"] = ImageHeader.IsJpeg(bytes),
             ["width"] = size?.Width,
             ["height"] = size?.Height,
+            ["failedImages"] = _failedImages.Count,
             ["error"] = null,
         });
     }
@@ -138,6 +190,10 @@
         Png,
         Jpeg,
         Svg,
-        PixelData
+        PixelData,
+
+        /// <summary>Returns the live HTMLCanvasElement rather than an encoded image.</summary>
+
+        Canvas
     }
 }
