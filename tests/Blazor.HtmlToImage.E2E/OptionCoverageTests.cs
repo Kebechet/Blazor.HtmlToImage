@@ -79,7 +79,7 @@ public sealed class OptionCoverageTests
     }
 
     [Fact]
-    public async Task StyleAndIncludeStyleProperties_CaptureSuccessfully()
+    public async Task StyleOverride_ReachesThePixels_NotJustTheOptions()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--style-overrides");
@@ -88,15 +88,28 @@ public sealed class OptionCoverageTests
         var state = await _fixture.CaptureAsync(canvas, "style");
 
         // Assert
-        // IncludeStyleProperties restricts which computed properties are copied; naming one that
-        // html-to-image cannot resolve throws mid-clone, so a clean PNG is the meaningful signal.
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
-        Assert.True(StoryState.Int(state, "byteLength") > 500, $"Expected real image data. State: {state}");
+        // The story overrides the background to #b4231f - a colour nowhere in the on-screen design.
+        // The clone's inner layout under IncludeStyleProperties is not pixel-stable (white text can
+        // land anywhere), so sample five interior points and require a majority to be that red:
+        // if the Style dictionary never reached the clone, all five would be the dark #101418 ramp.
+        var points = new (double X, double Y)[] { (0.15, 0.5), (0.5, 0.85), (0.85, 0.5), (0.85, 0.85), (0.5, 0.15) };
+        var reddish = 0;
+        foreach (var point in points)
+        {
+            var pixel = await _fixture.SamplePreviewPixelAsync("style", point.X, point.Y);
+            if (pixel[0] > 120 && pixel[1] < 90 && pixel[2] < 80)
+            {
+                reddish++;
+            }
+        }
+
+        Assert.True(reddish >= 3, $"Expected the overridden #b4231f background in the capture; {reddish}/5 sampled points were red.");
         _fixture.AssertNoJsErrors();
     }
 
     [Fact]
-    public async Task FontAndCacheOptions_CaptureSuccessfully()
+    public async Task FontOptions_CaptureSucceeds_AndGetFontEmbedCssRoundTrips()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--fonts-and-caching");
@@ -108,6 +121,14 @@ public sealed class OptionCoverageTests
         // SkipFonts, PreferredFontFormat, CacheBust, IncludeQueryParams, SkipAutoScale and Type all
         // travel together here; any one of them arriving malformed aborts the capture.
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
+        // The story calls GetFontEmbedCssAsync before capturing and reports the CSS length. Zero is
+        // the CORRECT value for a page with no web fonts - the assertion is that the call
+        // round-tripped and returned a string, i.e. the value is present rather than null.
+        Assert.True(
+            state.TryGetProperty("fontCssLength", out var fontCssLength) &&
+            fontCssLength.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            fontCssLength.GetInt32() >= 0,
+            $"Expected GetFontEmbedCssAsync to round-trip. State: {state}");
         _fixture.AssertNoJsErrors();
     }
 

@@ -8,7 +8,7 @@
         <p class="demo-hint">@Hint</p>
     }
 
-    <div @ref="_poster" class="poster" data-testid="@($"{TestId}-poster")">
+    <div @ref="_poster" id="@($"{TestId}-poster")" class="poster" data-testid="@($"{TestId}-poster")">
         <p class="poster-title">Session summary</p>
         <p class="poster-headline">120 kg x 5</p>
         <div class="poster-row">
@@ -23,11 +23,16 @@
         }
         @if (ShowExcludedBadge)
         {
-            @* Carries the class the story passes as ExcludeCssClasses, so a correct capture drops
-               it - and the badge is deliberately the tallest element, making its removal visible
-               in the output height rather than only in the pixels. *@
+            @* Carries the class the story passes as ExcludeCssClasses. Excluding never shrinks the
+               output - the canvas keeps the element's layout size and the background shows where
+               the badge was - so the browser test proves removal by sampling those pixels. *@
             <span class="poster-badge capture-ignore" data-testid="@($"{TestId}-badge")">
-                Excluded from capture
+                Excluded by class
+            </span>
+            @* Second badge carries no class - only the attribute ExcludeSelector matches, so each
+               badge proves its own filter path. *@
+            <span class="poster-badge" data-demo-exclude data-testid="@($"{TestId}-badge-selector")">
+                Excluded by selector
             </span>
         }
     </div>
@@ -72,6 +77,16 @@
     [Parameter]
     public bool ShowBrokenImage { get; set; }
 
+    /// <summary>
+    /// Calls <c>GetFontEmbedCssAsync</c> before the capture and reports the resulting CSS length in
+    /// the panel. An empty string is the correct answer for this demo (it uses no web fonts) - the
+    /// point is proving the call round-trips.
+    /// </summary>
+    [Parameter]
+    public bool ShouldProbeFontCss { get; set; }
+
+    private int? _fontCssLength;
+
     private ElementReference _poster;
     private ElementReference _canvasHost;
     private string _previewDataUrl = string.Empty;
@@ -99,12 +114,28 @@
     {
         try
         {
+            if (ShouldProbeFontCss)
+            {
+                var fontCss = await _htmlToImage.GetFontEmbedCssAsync(_poster, Options);
+                _fontCssLength = fontCss.Length;
+            }
+
             switch (Kind)
             {
                 case CaptureKind.Png:
                     var pngBytes = await _htmlToImage.ToPngBytesAsync(_poster, Options);
                     _previewDataUrl = $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
                     WriteState(pngBytes, "png");
+                    break;
+
+                case CaptureKind.PngDataUrl:
+                    // Deliberately the data-URL method AND the element-id overload: the byte-stream
+                    // path over ElementReference is covered by every other PNG story, so this one
+                    // pins ToPngAsync, the id-based node resolution, and the base64 round-trip.
+                    var pngDataUrl = await _htmlToImage.ToPngAsync($"{TestId}-poster", Options);
+                    var decodedPngBytes = Convert.FromBase64String(pngDataUrl[(pngDataUrl.IndexOf(',') + 1)..]);
+                    _previewDataUrl = pngDataUrl;
+                    WriteState(decodedPngBytes, "png");
                     break;
 
                 case CaptureKind.Jpeg:
@@ -175,6 +206,7 @@
             ["width"] = size?.Width,
             ["height"] = size?.Height,
             ["failedImages"] = _failedImages.Count,
+            ["fontCssLength"] = _fontCssLength,
             ["error"] = null,
         });
     }
@@ -199,12 +231,12 @@
     public enum CaptureKind
     {
         Png,
+        /// <summary>PNG via the data-URL method and the element-id overload, exercising both alternate call shapes.</summary>
+        PngDataUrl,
         Jpeg,
         Svg,
         PixelData,
-
         /// <summary>Returns the live HTMLCanvasElement rather than an encoded image.</summary>
-
         Canvas
     }
 }

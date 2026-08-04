@@ -53,27 +53,48 @@ public sealed class CaptureTests
     }
 
     [Fact]
-    public async Task Capture_ExcludeCssClasses_ShortensTheOutputByTheExcludedElement()
+    public async Task Capture_ExcludeClassAndSelector_EachRemoveTheirOwnElement()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--excluding-elements");
 
-        // The badge is present in the live DOM - only the capture should be missing it.
+        // Both badges are present in the live DOM - one matches only ExcludeCssClasses, the other
+        // only ExcludeSelector, so each one is a separate filter path to prove.
         await canvas.GetByTestId("exclude-badge").WaitForAsync();
-        var posterHeight = await canvas.GetByTestId("exclude-poster").EvaluateAsync<double>(
-            "el => el.getBoundingClientRect().height");
+        await canvas.GetByTestId("exclude-badge-selector").WaitForAsync();
+
+        // Badge centres as fractions of the poster box. html-to-image sizes the canvas from the
+        // node's LAYOUT box and leaves the background where excluded children were - the output
+        // never gets shorter. (An earlier version asserted a height shrink and passed only through
+        // integer-vs-fractional rounding; the pixels are the real evidence.)
+        var badgeFractions = await _fixture.Page.EvaluateAsync<double[][]>(
+            @"() => {
+                const poster = document.querySelector('[data-testid=""exclude-poster""]').getBoundingClientRect();
+                return ['exclude-badge', 'exclude-badge-selector'].map(id => {
+                    const badge = document.querySelector(`[data-testid=""${id}""]`).getBoundingClientRect();
+                    return [
+                        (badge.x - poster.x + badge.width / 2) / poster.width,
+                        (badge.y - poster.y + badge.height / 2) / poster.height,
+                    ];
+                });
+            }");
 
         // Act
         var state = await _fixture.CaptureAsync(canvas, "exclude");
 
         // Assert
-        // At PixelRatio 1 the captured height would equal the element's own height if nothing were
-        // filtered. The badge is the tallest excluded child, so a correct filter makes the output
-        // measurably shorter - which proves the predicate ran, not merely that it was accepted.
-        var capturedHeight = StoryState.Int(state, "height");
-        Assert.True(
-            capturedHeight < posterHeight,
-            $"Expected the capture ({capturedHeight}px) to be shorter than the live element ({posterHeight}px) once the badge was excluded. State: {state}");
+        Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
+        // On screen both badge positions are #b4231f red. In the capture the same positions must
+        // show the poster's dark background instead - one badge per filter path.
+        var filterPaths = new[] { "ExcludeCssClasses", "ExcludeSelector" };
+        for (var index = 0; index < badgeFractions.Length; index++)
+        {
+            var pixel = await _fixture.SamplePreviewPixelAsync("exclude", badgeFractions[index][0], badgeFractions[index][1]);
+            Assert.True(
+                pixel[0] < 100 && pixel[1] < 100,
+                $"{filterPaths[index]} did not exclude its badge: sampled rgba({pixel[0]},{pixel[1]},{pixel[2]},{pixel[3]}) where the badge sits.");
+        }
+
         _fixture.AssertNoJsErrors();
     }
 
@@ -127,7 +148,7 @@ public sealed class CaptureTests
     }
 
     [Fact]
-    public async Task Capture_BackgroundColourStory_SucceedsWithoutInteropErrors()
+    public async Task Capture_BackgroundColour_PaintsThePixelsBehindTheRoundedCorners()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--background-colour");
@@ -137,6 +158,14 @@ public sealed class CaptureTests
 
         // Assert
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
+        // The poster has rounded corners, so pixel (0,0) lies OUTSIDE the element - without
+        // BackgroundColor it is transparent; with #ffd166 it must be that exact colour. This is
+        // the difference between "the option was accepted" and "the option reached the pixels".
+        var corner = await _fixture.SamplePreviewPixelAsync("background", 0, 0);
+        Assert.True(
+            Math.Abs(corner[0] - 0xFF) <= 12 && Math.Abs(corner[1] - 0xD1) <= 12 &&
+            Math.Abs(corner[2] - 0x66) <= 12 && corner[3] == 255,
+            $"Expected corner pixel #ffd166, sampled rgba({corner[0]},{corner[1]},{corner[2]},{corner[3]}).");
         _fixture.AssertNoJsErrors();
     }
 }

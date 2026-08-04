@@ -9,8 +9,8 @@
         </Description>
         <Template>
             <CapturePlayground TestId="png"
-                               Kind="CapturePlayground.CaptureKind.Png"
-                               Hint="ToPngBytesAsync captures the element as PNG bytes, streamed over JS interop instead of base64. Press Capture - the panel reports the real dimensions read from the PNG's own IHDR header, not what the DOM measured." />
+                               Kind="CapturePlayground.CaptureKind.PngDataUrl"
+                               Hint="ToPngAsync captures the element as a data URL, here addressed by element id rather than an ElementReference - both alternate call shapes in one story. Press Capture - the panel reports the real dimensions read from the PNG's own IHDR header, not what the DOM measured. Prefer the To*BytesAsync variants (see JPEG) when uploading; they stream raw bytes instead of base64." />
         </Template>
     </Story>
 
@@ -40,7 +40,7 @@
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_excludeOptions"
                                ShowExcludedBadge="true"
-                               Hint="ExcludeCssClasses drops matching elements and their whole subtrees from the capture. The red badge is in the live DOM but carries capture-ignore, so the captured image has no badge and is measurably shorter." />
+                               Hint="ExcludeCssClasses and ExcludeSelector drop matching elements and their whole subtrees from the capture. Both red badges are in the live DOM - one matches by class, the other only by the [data-demo-exclude] selector. The capture contains neither: where they sit, the poster background shows instead (the output keeps the element's layout size)." />
         </Template>
     </Story>
 
@@ -157,7 +157,7 @@
             <CapturePlayground TestId="style"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_styleOptions"
-                               Hint="Style copies CSS onto the element only for the capture - here a border radius and rotation that are NOT applied on screen. IncludeStyleProperties narrows which computed properties get copied at all, the main speed lever on large subtrees." />
+                               Hint="Style copies CSS onto the element only for the capture - here a red background, border radius and rotation that are NOT applied on screen. IncludeStyleProperties narrows which computed properties get copied at all, the main speed lever on large subtrees." />
         </Template>
     </Story>
 
@@ -171,8 +171,9 @@
         <Template>
             <CapturePlayground TestId="fonts"
                                Kind="CapturePlayground.CaptureKind.Png"
+                               ShouldProbeFontCss="true"
                                Options="_fontOptions"
-                               Hint="SkipFonts avoids downloading and embedding web fonts entirely; PreferredFontFormat narrows the embed to one format; CacheBust and IncludeQueryParams control how resource URLs are cached. Together: the fastest configuration for a capture with no custom typography." />
+                               Hint="SkipFonts avoids downloading and embedding web fonts entirely; PreferredFontFormat narrows the embed to one format; CacheBust and IncludeQueryParams control how resource URLs are cached. The story also calls GetFontEmbedCssAsync first and reports the CSS length in the panel - 0 is correct here, since the demo uses no web fonts." />
         </Template>
     </Story>
 
@@ -202,6 +203,7 @@
     private readonly HtmlToImageOptions _excludeOptions = new()
     {
         ExcludeCssClasses = ["capture-ignore"],
+        ExcludeSelector = "[data-demo-exclude]",
         PixelRatio = 1,
     };
 
@@ -241,8 +243,15 @@
         {
             ["borderRadius"] = "36px",
             ["transform"] = "rotate(-2deg)",
+            // A solid colour nowhere in the on-screen design, so the browser test can prove the
+            // override reached the pixels rather than merely not crashing the capture.
+            ["background"] = "#b4231f",
         },
-        IncludeStyleProperties = ["color", "background", "font", "border-radius", "transform", "padding"],
+        IncludeStyleProperties =
+        [
+            "color", "background", "font", "border-radius", "transform", "padding",
+            "width", "height", "display", "flex-direction", "gap",
+        ],
         PixelRatio = 1,
     };
 

@@ -141,6 +141,36 @@ public sealed class DemoFixture : IAsyncLifetime
             $"the {testId} story to finish capturing");
     }
 
+    /// <summary>
+    /// Samples one pixel of a story's preview image, at fractional coordinates of its natural size.
+    /// Returns [r, g, b, a].
+    /// </summary>
+    /// <remarks>
+    /// This is what turns "the capture succeeded" into "the option reached the pixels": the preview
+    /// is drawn onto a scratch canvas and read back, so the assertion is against the encoded image
+    /// the library actually produced. Data-URL images are same-origin, so the canvas is not tainted.
+    /// </remarks>
+    public async Task<int[]> SamplePreviewPixelAsync(string testId, double xFraction, double yFraction)
+    {
+        return await Page.EvaluateAsync<int[]>(
+            @"([id, xf, yf]) => new Promise((resolve, reject) => {
+                const img = document.querySelector(`[data-testid=""${id}-preview""]`);
+                if (!img) { reject(new Error('no preview image for ' + id)); return; }
+                const sample = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const x = Math.min(canvas.width - 1, Math.round(canvas.width * xf));
+                    const y = Math.min(canvas.height - 1, Math.round(canvas.height * yf));
+                    resolve([...ctx.getImageData(x, y, 1, 1).data]);
+                };
+                img.complete && img.naturalWidth ? sample() : (img.onload = sample);
+            })",
+            new object[] { testId, xFraction, yFraction });
+    }
+
     /// <summary>Fails the current test if the page logged an unhandled JavaScript or Blazor render error.</summary>
     public void AssertNoJsErrors()
     {
