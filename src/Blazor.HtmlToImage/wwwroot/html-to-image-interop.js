@@ -115,6 +115,14 @@ export async function toDataUrl(target, format, options) {
 	}
 }
 
+/**
+ * Returns the raw Blob / ArrayBuffer, NOT a DotNet.createJSStreamReference(...) wrapper.
+ *
+ * Because the .NET side declares the result as IJSStreamReference, Blazor's own result converter
+ * calls createJSStreamReference on whatever this returns. Wrapping it here too means the framework
+ * re-wraps an already-wrapped marker object, which is neither a Blob nor a typed array, and the
+ * call dies with "Supplied value is not a typed array or blob."
+ */
 export async function toStream(target, format, options) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
@@ -122,21 +130,23 @@ export async function toStream(target, format, options) {
 
 	if (format === 'pixelData') {
 		const pixels = await library.toPixelData(node, resolvedOptions);
-		return DotNet.createJSStreamReference(pixels.buffer ?? pixels);
+		return pixels.buffer ?? pixels;
 	}
 
-	// toBlob honours `type`, so the format has to be pushed into the options rather than picking a
-	// different entry point the way the data-url path does.
-	const blob = await library.toBlob(node, {
-		...resolvedOptions,
-		type: format === 'jpeg' ? 'image/jpeg' : 'image/png',
-	});
+	// Deliberately NOT library.toBlob. Upstream's toBlob forwards the options to toCanvas but then
+	// calls its internal canvasToBlob(canvas) with no options at all, so `type` and `quality` are
+	// silently dropped and every result is a PNG at quality 1 - asking it for a JPEG returns a PNG.
+	// Doing the canvas-to-blob step here is what makes ToJpegBytesAsync and Quality actually work.
+	const canvas = await library.toCanvas(node, resolvedOptions);
+	const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+	const quality = typeof resolvedOptions.quality === 'number' ? resolvedOptions.quality : 1;
 
+	const blob = await new Promise(resolve => canvas.toBlob(resolve, mimeType, quality));
 	if (!blob) {
-		throw new Error('html-to-image returned no blob for the requested element.');
+		throw new Error(`The browser produced no ${mimeType} blob for the requested element.`);
 	}
 
-	return DotNet.createJSStreamReference(blob);
+	return blob;
 }
 
 export async function getFontEmbedCss(target, options) {

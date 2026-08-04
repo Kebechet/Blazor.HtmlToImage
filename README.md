@@ -5,12 +5,15 @@
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Kebechet.Blazor.HtmlToImage)](https://www.nuget.org/packages/Kebechet.Blazor.HtmlToImage/)
 [![Build](https://github.com/Kebechet/Blazor.HtmlToImage/actions/workflows/build.yml/badge.svg)](https://github.com/Kebechet/Blazor.HtmlToImage/actions/workflows/build.yml)
 [![codecov](https://codecov.io/gh/Kebechet/Blazor.HtmlToImage/graph/badge.svg)](https://codecov.io/gh/Kebechet/Blazor.HtmlToImage)
+[![Storybook](https://img.shields.io/badge/storybook-live%20demo-ff4785)](https://kebechet.github.io/Blazor.HtmlToImage/)
 ![Last updated](https://img.shields.io/github/last-commit/Kebechet/Blazor.HtmlToImage/main?label=last%20updated)
 [![Twitter](https://img.shields.io/twitter/url/https/twitter.com/samuel_sidor.svg?style=social&label=Follow%20samuel_sidor)](https://x.com/samuel_sidor)
 
 Blazor wrapper for [html-to-image](https://github.com/bubkoo/html-to-image): capture any DOM element as PNG, JPEG, SVG, raw bytes or pixel data.
 
 The html-to-image build is **vendored and pinned** inside the package and injected by a Blazor JS initializer, so there is no npm step, no CDN, and no `<script>` tag to add. That matters beyond convenience: a CDN reference breaks a MAUI or hybrid app offline, lets a shipped store build change behaviour without a release, and counts as downloading executable code at runtime under App Store guideline 2.5.2.
+
+**[Live storybook](https://kebechet.github.io/Blazor.HtmlToImage/)** - interactive stories for every feature.
 
 ## Installation
 
@@ -102,15 +105,21 @@ This wrapper exposes a curated subset of html-to-image, not the whole API.
 | Entry points | 7 | 6 |
 | Options | 20 | 18 |
 
-**Covered entry points:** `toPng`, `toJpeg`, `toSvg`, `toBlob` (as the `To*BytesAsync` methods), `toPixelData`, `getFontEmbedCSS`.
+**Covered entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS`, and `toCanvas` (used internally to back the `To*BytesAsync` methods - see below).
 
-**Not covered:** `toCanvas` - it resolves to a live `HTMLCanvasElement`, which has no meaningful .NET representation. If you need the canvas itself, capture with `ToPngAsync` and draw the data URL onto your own canvas.
+**Not covered:** `toBlob`, deliberately - see the deviation note below. `toCanvas` is not surfaced directly either, since a live `HTMLCanvasElement` has no meaningful .NET representation; if you need the canvas itself, capture with `ToPngAsync` and draw the data URL onto your own.
 
 **Covered options:** `width`, `height`, `backgroundColor`, `canvasWidth`, `canvasHeight`, `style`, `includeStyleProperties`, `quality`, `cacheBust`, `includeQueryParams`, `imagePlaceholder`, `pixelRatio`, `skipFonts`, `preferredFontFormat`, `fontEmbedCSS`, `skipAutoScale`, `type`, and `filter` (reshaped into `ExcludeCssClasses` / `ExcludeSelector`).
 
 **Not covered:** `fetchRequestInit` and `onImageErrorHandler`. Both take JavaScript-only values - a `RequestInit` object and an error-event callback - with no interop-friendly shape. Unlike a component wrapper there is no `AdditionalAttributes` escape hatch here, so these two are genuinely unreachable; open an issue if you need them and they can be modelled explicitly.
 
 Coverage is measured against html-to-image's published type definitions - `lib/index.d.ts` for entry points, `lib/types.d.ts` for the `Options` interface - excluding underscore-prefixed internals. Re-checked on every upstream version bump.
+
+### One deliberate deviation from upstream
+
+⚠️ **`ToJpegBytesAsync` does not call upstream's `toBlob`.**
+
+Upstream's `toBlob` forwards its options to `toCanvas` but then calls its own internal `canvasToBlob(canvas)` with **no options at all**, so `type` and `quality` are silently dropped - asking it for a JPEG returns a PNG at quality 1. This wrapper calls `toCanvas` and does the canvas-to-blob step itself, which is what makes `ToJpegBytesAsync` return real JPEG bytes and `Quality` take effect. Pinned by the `Capture_JpegStory_ReturnsBytesWithAJpegSignature` browser test.
 
 ## Vendored library provenance
 

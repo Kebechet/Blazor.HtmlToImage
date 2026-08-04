@@ -1,0 +1,14 @@
+@* Mirrors the shape the browser suite asserts against - the panel is the only place the E2E tests
+   can read what the C# side actually received, rather than what the DOM happens to look like. *@
+<section class="demo-model" aria-label="Capture result">
+    <h3>Capture result</h3>
+    <pre data-testid="@TestId">@Json</pre>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Json { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string TestId { get; set; } = string.Empty;
+}

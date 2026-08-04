@@ -1,0 +1,124 @@
+@attribute [Stories("Capture/HtmlToImage")]
+
+<Stories TComponent="CapturePlayground">
+
+    <Story Name="PNG">
+        <Description>
+            The default capture. <code>ToPngBytesAsync</code> streams the image over JS interop rather
+            than marshalling a base64 data URL, so the bytes arrive without a 33% encoding tax.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="png"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Hint="Press Capture. The panel reports the real PNG dimensions read from the IHDR chunk, not what the DOM measured." />
+        </Template>
+    </Story>
+
+    <Story Name="Pixel ratio">
+        <Description>
+            <code>PixelRatio</code> multiplies the output resolution while the element's CSS size stays
+            the same. The poster is 320 CSS pixels wide, so a ratio of 3 produces a 960-pixel-wide PNG.
+            This is what makes a captured poster look sharp when it lands in a messaging app.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="pixel-ratio"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_pixelRatioOptions"
+                               Hint="PixelRatio = 3 against a 320px-wide element - expect a 960px-wide PNG." />
+        </Template>
+    </Story>
+
+    <Story Name="Excluding elements">
+        <Description>
+            Upstream's <code>filter</code> is a JavaScript predicate, which cannot cross JS interop as a
+            delegate without a round-trip per DOM node. It is modelled instead as
+            <code>ExcludeCssClasses</code> and <code>ExcludeSelector</code>, which the interop layer
+            compiles into a single filter function. Excluding a node excludes its whole subtree.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="exclude"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_excludeOptions"
+                               ShowExcludedBadge="true"
+                               Hint="The red badge is in the DOM but carries capture-ignore, so it is absent from the captured image - and the output is shorter as a result." />
+        </Template>
+    </Story>
+
+    <Story Name="Background colour">
+        <Description>
+            The captured element's own background is transparent where CSS leaves it so.
+            <code>BackgroundColor</code> fills that, which matters for JPEG - a format with no alpha
+            channel, where transparency otherwise renders black.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="background"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_backgroundOptions" />
+        </Template>
+    </Story>
+
+    <Story Name="JPEG">
+        <Description>
+            <code>Quality</code> runs from 0 to 1 and only affects JPEG. Lower quality means
+            dramatically fewer bytes, which is what you want when the image is about to be uploaded.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="jpeg"
+                               Kind="CapturePlayground.CaptureKind.Jpeg"
+                               Options="_jpegOptions"
+                               Hint="Quality 0.5 - the panel reports the resulting byte length." />
+        </Template>
+    </Story>
+
+    <Story Name="SVG">
+        <Description>
+            <code>ToSvgAsync</code> inlines the subtree into an SVG <code>foreignObject</code> and
+            returns it as a data URL. It stays resolution-independent, but rendering depends on the
+            viewer's own CSS support.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="svg"
+                               Kind="CapturePlayground.CaptureKind.Svg" />
+        </Template>
+    </Story>
+
+    <Story Name="Pixel data">
+        <Description>
+            <code>ToPixelDataAsync</code> returns raw RGBA bytes, four per pixel in row-major order -
+            useful for analysis rather than display. The byte length is therefore
+            <code>width x height x 4</code>.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="pixel-data"
+                               Kind="CapturePlayground.CaptureKind.PixelData"
+                               Hint="No preview: these are raw RGBA bytes, not an encoded image." />
+        </Template>
+    </Story>
+
+</Stories>
+
+@code {
+    private readonly HtmlToImageOptions _pixelRatioOptions = new()
+    {
+        PixelRatio = 3,
+    };
+
+    private readonly HtmlToImageOptions _excludeOptions = new()
+    {
+        ExcludeCssClasses = ["capture-ignore"],
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _backgroundOptions = new()
+    {
+        BackgroundColor = "#ffd166",
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _jpegOptions = new()
+    {
+        Quality = 0.5,
+        BackgroundColor = "#101418",
+        PixelRatio = 1,
+    };
+}

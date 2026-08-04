@@ -1,0 +1,118 @@
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 16px;
+}
+
+.demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.demo-hint {
+    margin: 0;
+    font-size: 13px;
+    color: #555;
+    max-width: 60ch;
+}
+
+/* The subject of the capture. Fixed width so a story's output dimensions are predictable, which
+   is what lets the browser suite assert PixelRatio scaling against an exact number. */
+.poster {
+    width: 320px;
+    box-sizing: border-box;
+    padding: 20px;
+    border-radius: 16px;
+    background: linear-gradient(140deg, #101418, #1d2732);
+    color: #f4f6f8;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.poster-title {
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #8ea3b8;
+    margin: 0;
+}
+
+.poster-headline {
+    font-size: 34px;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.1;
+}
+
+.poster-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #c7d3df;
+}
+
+.poster-badge {
+    align-self: flex-start;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #b4231f;
+    color: #fff;
+}
+
+.demo-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+button {
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #c9d2db;
+    background: #fff;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #f2f5f8;
+}
+
+.demo-model {
+    border: 1px solid #e2e8ee;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #fbfcfd;
+    min-width: 320px;
+}
+
+.demo-model h3 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #66788a;
+}
+
+.demo-model pre {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.capture-preview {
+    border: 1px dashed #c9d2db;
+    border-radius: 10px;
+    padding: 8px;
+}
+
+.capture-preview img {
+    display: block;
+    max-width: 320px;
+    height: auto;
+}

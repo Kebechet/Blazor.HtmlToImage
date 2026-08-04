@@ -1,0 +1,143 @@
+@inject IHtmlToImageService _htmlToImage
+
+<div class="demo-stack">
+    @if (!Hint.IsNullOrEmpty())
+    {
+        <p class="demo-hint">@Hint</p>
+    }
+
+    <div @ref="_poster" class="poster" data-testid="@($"{TestId}-poster")">
+        <p class="poster-title">Session summary</p>
+        <p class="poster-headline">120 kg x 5</p>
+        <div class="poster-row">
+            <span>Bench press</span>
+            <span>PR</span>
+        </div>
+        @if (ShowExcludedBadge)
+        {
+            @* Carries the class the story passes as ExcludeCssClasses, so a correct capture drops
+               it - and the badge is deliberately the tallest element, making its removal visible
+               in the output height rather than only in the pixels. *@
+            <span class="poster-badge capture-ignore" data-testid="@($"{TestId}-badge")">
+                Excluded from capture
+            </span>
+        }
+    </div>
+
+    <div class="demo-actions">
+        <button data-testid="@($"{TestId}-capture")" @onclick="Capture">Capture</button>
+    </div>
+
+    @if (!_previewDataUrl.IsNullOrEmpty())
+    {
+        <div class="capture-preview">
+            <img src="@_previewDataUrl" alt="Captured result" data-testid="@($"{TestId}-preview")" />
+        </div>
+    }
+
+    <CaptureState TestId="@($"{TestId}-state")" Json="@_stateJson" />
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string TestId { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Hint { get; set; }
+
+    [Parameter]
+    public CaptureKind Kind { get; set; } = CaptureKind.Png;
+
+    [Parameter]
+    public HtmlToImageOptions? Options { get; set; }
+
+    [Parameter]
+    public bool ShowExcludedBadge { get; set; }
+
+    private ElementReference _poster;
+    private string _previewDataUrl = string.Empty;
+    private string _stateJson = "{}";
+
+    private async Task Capture()
+    {
+        try
+        {
+            switch (Kind)
+            {
+                case CaptureKind.Png:
+                    var pngBytes = await _htmlToImage.ToPngBytesAsync(_poster, Options);
+                    _previewDataUrl = $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
+                    WriteState(pngBytes, "png");
+                    break;
+
+                case CaptureKind.Jpeg:
+                    var jpegBytes = await _htmlToImage.ToJpegBytesAsync(_poster, Options);
+                    _previewDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(jpegBytes)}";
+                    WriteState(jpegBytes, "jpeg");
+                    break;
+
+                case CaptureKind.Svg:
+                    var svgDataUrl = await _htmlToImage.ToSvgAsync(_poster, Options);
+                    _previewDataUrl = svgDataUrl;
+                    WriteSvgState(svgDataUrl);
+                    break;
+
+                case CaptureKind.PixelData:
+                    var pixels = await _htmlToImage.ToPixelDataAsync(_poster, Options);
+                    _previewDataUrl = string.Empty;
+                    WriteState(pixels, "pixelData");
+                    break;
+            }
+        }
+        catch (Exception exception)
+        {
+            _stateJson = Serialize(new Dictionary<string, object?>
+            {
+                ["hasCaptured"] = false,
+                ["error"] = exception.Message,
+            });
+        }
+    }
+
+    private void WriteState(byte[] bytes, string format)
+    {
+        var size = ImageHeader.ReadPngSize(bytes);
+
+        _stateJson = Serialize(new Dictionary<string, object?>
+        {
+            ["hasCaptured"] = true,
+            ["format"] = format,
+            ["byteLength"] = bytes.Length,
+            ["isPng"] = ImageHeader.IsPng(bytes),
+            ["isJpeg"] = ImageHeader.IsJpeg(bytes),
+            ["width"] = size?.Width,
+            ["height"] = size?.Height,
+            ["error"] = null,
+        });
+    }
+
+    private void WriteSvgState(string dataUrl)
+    {
+        _stateJson = Serialize(new Dictionary<string, object?>
+        {
+            ["hasCaptured"] = true,
+            ["format"] = "svg",
+            ["byteLength"] = dataUrl.Length,
+            ["isSvgDataUrl"] = dataUrl.StartsWith("data:image/svg+xml", StringComparison.Ordinal),
+            ["error"] = null,
+        });
+    }
+
+    private static string Serialize(Dictionary<string, object?> state)
+    {
+        return JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    public enum CaptureKind
+    {
+        Png,
+        Jpeg,
+        Svg,
+        PixelData
+    }
+}
