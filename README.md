@@ -125,6 +125,12 @@ Coverage is measured against html-to-image's published type definitions - `lib/i
 
 Upstream's `toBlob` forwards its options to `toCanvas` but then calls its own internal `canvasToBlob(canvas)` with **no options at all**, so `type` and `quality` are silently dropped - asking it for a JPEG returns a PNG at quality 1. This wrapper calls `toCanvas` and does the canvas-to-blob step itself, which is what makes `ToJpegBytesAsync` return real JPEG bytes and `Quality` take effect. Pinned by the `Capture_JpegStory_ReturnsBytesWithAJpegSignature` browser test.
 
+## Captures stall in hidden tabs - by upstream design
+
+⚠️ **A capture started while the tab is hidden or fully occluded does not complete until the tab renders a frame again.** Nothing errors and nothing times out - the Task just stays pending, then resolves when the tab becomes visible.
+
+This is upstream's own resolution path, not wrapper behaviour: html-to-image's `createImage` resolves every capture inside `img.decode().then(() => requestAnimationFrame(resolve))`, and browsers do not fire `requestAnimationFrame` for hidden documents. The normal case - capturing in response to a user action in a visible tab - never sees this. It matters only if a capture races a tab switch, or if you drive the page from automation that keeps it backgrounded (CDP screenshots force a frame, which un-stalls it).
+
 ## Vendored library provenance
 
 | | |
