@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject IHtmlToImageService _htmlToImage
+@inject IJSRuntime _jsRuntime
 
 <div class="demo-stack">
     @if (!Hint.IsNullOrEmpty())
@@ -41,6 +42,12 @@
             <img src="@_previewDataUrl" alt="Captured result" data-testid="@($"{TestId}-preview")" />
         </div>
     }
+    @if (Kind == CaptureKind.Canvas)
+    {
+        @* ToCanvasAsync's result is a LIVE element, so the demo proves it by handing it to a page
+           script that attaches it here - not by re-encoding it into an <img>. *@
+        <div class="capture-preview" @ref="_canvasHost" data-testid="@($"{TestId}-canvas-host")"></div>
+    }
 
     <CaptureState TestId="@($"{TestId}-state")" Json="@_stateJson" />
 </div>
@@ -66,6 +73,7 @@
     public bool ShowBrokenImage { get; set; }
 
     private ElementReference _poster;
+    private ElementReference _canvasHost;
     private string _previewDataUrl = string.Empty;
     private string _stateJson = "{}";
     private readonly List<string> _failedImages = [];
@@ -112,12 +120,15 @@
                     break;
 
                 case CaptureKind.Canvas:
-                    // The reference owns a real DOM element, so it is disposed as soon as the demo has
-                    // read what it needs - otherwise the canvas and its bitmap outlive the capture.
+                    // The interop reference is disposed as soon as the demo has used it - the DOM
+                    // keeps the attached element; only the .NET handle is released.
                     await using (var canvas = await _htmlToImage.ToCanvasAsync(_poster, Options))
                     {
                         var width = await canvas.GetValueAsync<int>("width");
                         var height = await canvas.GetValueAsync<int>("height");
+                        // Hand the LIVE element to page JS and attach it below - the whole point of
+                        // ToCanvasAsync over ToPngAsync, demonstrated rather than described.
+                        await _jsRuntime.InvokeVoidAsync("demoAttachCanvas", canvas, _canvasHost);
                         _previewDataUrl = string.Empty;
                         _stateJson = Serialize(new Dictionary<string, object?>
                         {

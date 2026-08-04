@@ -126,3 +126,9 @@ button:hover {
     max-width: 320px;
     height: auto;
 }
+
+/* The canvas host exists before anything is attached to it (Blazor needs the @ref); stay
+   invisible until page JS actually places the captured element inside. */
+.capture-preview:empty {
+    display: none;
+}

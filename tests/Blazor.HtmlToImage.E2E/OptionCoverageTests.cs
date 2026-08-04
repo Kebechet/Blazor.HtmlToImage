@@ -31,6 +31,11 @@ public sealed class OptionCoverageTests
         // proves an actual HTMLCanvasElement crossed the boundary rather than a null reference.
         Assert.True(StoryState.Int(state, "width") > 0, $"Expected a real canvas width. State: {state}");
         Assert.True(StoryState.Int(state, "height") > 0, $"Expected a real canvas height. State: {state}");
+        // The demo hands the reference back to page JS, which attaches the element - proving the
+        // reference revives to the ORIGINAL live canvas, and that it survives disposing the handle.
+        var isCanvasAttached = await _fixture.Page.EvaluateAsync<bool>(
+            "() => !!document.querySelector('[data-testid=\"canvas-canvas-host\"] canvas')");
+        Assert.True(isCanvasAttached, "Expected the live canvas element attached to the page.");
         _fixture.AssertNoJsErrors();
     }
 

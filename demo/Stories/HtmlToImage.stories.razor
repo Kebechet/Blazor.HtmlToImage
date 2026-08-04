@@ -107,7 +107,7 @@
         <Template>
             <CapturePlayground TestId="canvas"
                                Kind="CapturePlayground.CaptureKind.Canvas"
-                               Hint="ToCanvasAsync returns the live HTMLCanvasElement as an IJSObjectReference, for handing to other JavaScript (a WebGL texture, a custom encoder). The panel reports the canvas element's own width and height, read back over interop - then the reference is disposed." />
+                               Hint="ToCanvasAsync returns the live HTMLCanvasElement as an IJSObjectReference, for handing to other JavaScript (a WebGL texture, a custom encoder). Press Capture - the demo hands that element to a page script which attaches it below, proving it is a real canvas and not an encoded copy. The panel reports its width and height; the interop reference is disposed after, the DOM keeps the element." />
         </Template>
     </Story>
 
