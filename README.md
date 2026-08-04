@@ -1,0 +1,128 @@
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/kebechet)
+
+# Blazor.HtmlToImage
+[![NuGet Version](https://img.shields.io/nuget/v/Kebechet.Blazor.HtmlToImage)](https://www.nuget.org/packages/Kebechet.Blazor.HtmlToImage/)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Kebechet.Blazor.HtmlToImage)](https://www.nuget.org/packages/Kebechet.Blazor.HtmlToImage/)
+[![Build](https://github.com/Kebechet/Blazor.HtmlToImage/actions/workflows/build.yml/badge.svg)](https://github.com/Kebechet/Blazor.HtmlToImage/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/Kebechet/Blazor.HtmlToImage/graph/badge.svg)](https://codecov.io/gh/Kebechet/Blazor.HtmlToImage)
+![Last updated](https://img.shields.io/github/last-commit/Kebechet/Blazor.HtmlToImage/main?label=last%20updated)
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/samuel_sidor.svg?style=social&label=Follow%20samuel_sidor)](https://x.com/samuel_sidor)
+
+Blazor wrapper for [html-to-image](https://github.com/bubkoo/html-to-image): capture any DOM element as PNG, JPEG, SVG, raw bytes or pixel data.
+
+The html-to-image build is **vendored and pinned** inside the package and injected by a Blazor JS initializer, so there is no npm step, no CDN, and no `<script>` tag to add. That matters beyond convenience: a CDN reference breaks a MAUI or hybrid app offline, lets a shipped store build change behaviour without a release, and counts as downloading executable code at runtime under App Store guideline 2.5.2.
+
+## Installation
+
+```bash
+dotnet add package Kebechet.Blazor.HtmlToImage
+```
+
+Register the service:
+
+```csharp
+using Kebechet.Blazor.HtmlToImage;
+
+builder.Services.AddHtmlToImage();
+```
+
+## Usage
+
+```razor
+@inject IHtmlToImageService _htmlToImage
+
+<div @ref="_poster" class="poster">
+    <h1>Bench press - 120 kg x 5</h1>
+    <button class="capture-ignore" @onclick="Capture">Share</button>
+</div>
+
+@code {
+    private ElementReference _poster;
+
+    private async Task Capture()
+    {
+        var png = await _htmlToImage.ToPngBytesAsync(_poster, new HtmlToImageOptions
+        {
+            PixelRatio = 3,
+            BackgroundColor = "#0b0b0b",
+            ExcludeCssClasses = ["capture-ignore"],
+        });
+
+        // upload, save, or hand to a native share sheet
+    }
+}
+```
+
+Every method also takes a DOM id instead of an `ElementReference`:
+
+```csharp
+var dataUrl = await _htmlToImage.ToPngAsync("poster");
+```
+
+### Data URL vs. bytes
+
+`ToPngAsync` returns a `data:image/png;base64,...` string, matching upstream. `ToPngBytesAsync` returns `byte[]` and **streams** the image over JS interop instead of marshalling base64. Prefer the bytes overload for anything you intend to upload or save: a poster at `PixelRatio = 3` is several megabytes, and a data URL carries it as one JSON string - roughly 33% larger and fully buffered on both sides.
+
+### Excluding elements from the capture
+
+Upstream's `filter` is a JavaScript predicate, which cannot cross JS interop as a delegate without a round-trip per DOM node. It is modelled instead as two declarative options that the interop layer compiles into a single filter:
+
+```csharp
+new HtmlToImageOptions
+{
+    ExcludeCssClasses = ["capture-ignore", "debug-overlay"],
+    ExcludeSelector = "[data-private]",
+}
+```
+
+Excluding a node excludes its whole subtree, matching upstream semantics.
+
+### Repeated captures of the same subtree
+
+Font resolution dominates the cost of a capture that uses web fonts. Resolve once and reuse:
+
+```csharp
+var fontCss = await _htmlToImage.GetFontEmbedCssAsync(_poster);
+
+foreach (var frame in frames)
+{
+    var png = await _htmlToImage.ToPngBytesAsync(_poster, new HtmlToImageOptions
+    {
+        FontEmbedCss = fontCss,
+    });
+}
+```
+
+## Coverage vs. html-to-image 1.11.13
+
+This wrapper exposes a curated subset of html-to-image, not the whole API.
+
+| Axis | html-to-image | This package |
+|---|---:|---:|
+| Entry points | 7 | 6 |
+| Options | 20 | 18 |
+
+**Covered entry points:** `toPng`, `toJpeg`, `toSvg`, `toBlob` (as the `To*BytesAsync` methods), `toPixelData`, `getFontEmbedCSS`.
+
+**Not covered:** `toCanvas` - it resolves to a live `HTMLCanvasElement`, which has no meaningful .NET representation. If you need the canvas itself, capture with `ToPngAsync` and draw the data URL onto your own canvas.
+
+**Covered options:** `width`, `height`, `backgroundColor`, `canvasWidth`, `canvasHeight`, `style`, `includeStyleProperties`, `quality`, `cacheBust`, `includeQueryParams`, `imagePlaceholder`, `pixelRatio`, `skipFonts`, `preferredFontFormat`, `fontEmbedCSS`, `skipAutoScale`, `type`, and `filter` (reshaped into `ExcludeCssClasses` / `ExcludeSelector`).
+
+**Not covered:** `fetchRequestInit` and `onImageErrorHandler`. Both take JavaScript-only values - a `RequestInit` object and an error-event callback - with no interop-friendly shape. Unlike a component wrapper there is no `AdditionalAttributes` escape hatch here, so these two are genuinely unreachable; open an issue if you need them and they can be modelled explicitly.
+
+Coverage is measured against html-to-image's published type definitions - `lib/index.d.ts` for entry points, `lib/types.d.ts` for the `Options` interface - excluding underscore-prefixed internals. Re-checked on every upstream version bump.
+
+## Vendored library provenance
+
+| | |
+|---|---|
+| Version | html-to-image 1.11.13 |
+| File | `wwwroot/html-to-image.js` |
+| Source | npm tarball `html-to-image-1.11.13.tgz`, `package/dist/html-to-image.js` |
+| SHA-256 | `a90b42909d80964269ef6d5f3d1e4a5a7e2a4c263a5d2a76a9e7151901343262` |
+
+The npm `dist` build is already minified - jsDelivr reports "skipped minification" for it - so it is vendored verbatim rather than re-minified, and the hash above verifies byte-for-byte against the tarball.
+
+## License
+
+[MIT](LICENSE). html-to-image is itself [MIT licensed](https://github.com/bubkoo/html-to-image/blob/master/LICENSE).

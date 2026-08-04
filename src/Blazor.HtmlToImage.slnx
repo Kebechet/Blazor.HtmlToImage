@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Blazor.HtmlToImage\Blazor.HtmlToImage.csproj" />
+  <Project Path="..\tests\Blazor.HtmlToImage.Tests\Blazor.HtmlToImage.Tests.csproj" />
+</Solution>
