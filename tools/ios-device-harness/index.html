@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>h2i-harness</title>
+<script>
+'use strict';
+const pendingReports = [];
+function flushReports() {
+  if (!pendingReports.length) return;
+  const body = pendingReports[0];
+  fetch('/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    .then(function (response) {
+      if (response.ok || response.status === 204) {
+        pendingReports.shift();
+        flushReports();
+      }
+    })
+    .catch(function () { /* retried by the interval */ });
+}
+setInterval(flushReports, 5000);
+function report(payload) {
+  try {
+    pendingReports.push(JSON.stringify(payload));
+    flushReports();
+  } catch (e) { /* reporting must never throw */ }
+}
+window.onerror = function (message, source, line, col) {
+  report({ stage: 'js-error', message: String(message), source: String(source), line: line, col: col });
+};
+window.addEventListener('unhandledrejection', function (event) {
+  report({ stage: 'unhandled-rejection', message: String(event.reason && event.reason.message || event.reason) });
+});
+report({ stage: 'head-parsed', userAgent: navigator.userAgent });
+</script>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 8px; }
+  #capture-root { background: #ffffff; padding: 8px; display: grid; grid-template-columns: repeat(4, 100px); gap: 8px; width: fit-content; }
+  .cell { width: 100px; height: 100px; background: #ffffff; display: flex; align-items: center; justify-content: center; }
+  .cell img, .cell svg { width: 80px; height: 80px; display: block; }
+  .cell .bgbox { width: 80px; height: 80px; background-size: cover; }
+  #status { font-size: 18px; font-weight: bold; padding: 6px 0; }
+  table { border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+  td, th { border: 1px solid #999; padding: 2px 5px; }
+  .PASS { background: #c8f7c5; } .BLANK { background: #f7c5c5; } .OTHER { background: #f7eec5; } .TIMEOUT, .ERROR { background: #e0c5f7; }
+</style>
+</head>
+<body>
+<div id="status" aria-label="harness-status">booting…</div>
+<button id="run">Run</button>
+
+<div id="capture-root">
+  <div class="cell" data-fixture="svg-pct"    data-expected="255,0,0"><img data-asset="assets/rect-pct.svg" alt=""></div>
+  <div class="cell" data-fixture="svg-abs"    data-expected="0,160,0"><img data-asset="assets/rect-abs.svg" alt=""></div>
+  <div class="cell" data-fixture="png-file"   data-expected="0,0,255"><img data-asset="assets/rect-blue.png" alt=""></div>
+  <div class="cell" data-fixture="png-data"   data-expected="255,0,255"><img class="data-url-img" alt=""></div>
+  <div class="cell" data-fixture="png-lazy"   data-expected="0,0,255"><img loading="lazy" data-asset="assets/rect-blue.png" data-suffix="lazy" alt=""></div>
+  <div class="cell" data-fixture="inline-svg" data-expected="255,136,0"><svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="#ff8800"/></svg></div>
+  <div class="cell" data-fixture="css-bg"     data-expected="0,128,128"><div class="bgbox" data-bg-asset="assets/rect-teal.png"></div></div>
+  <div class="cell" data-fixture="logo-real"  data-expected="ink" data-any-ink="true"><img data-asset="assets/logo-real.svg" alt=""></div>
+  <div class="cell" data-fixture="logo-fixed" data-expected="ink" data-any-ink="true"><img data-asset="assets/logo-fixed.svg" alt=""></div>
+  <div class="cell" data-fixture="noise1"     data-expected="ink" data-any-ink="true"><img data-noise="1" alt=""></div>
+  <div class="cell" data-fixture="noise2"     data-expected="ink" data-any-ink="true"><img data-noise="2" alt=""></div>
+  <div class="cell" data-fixture="noise3"     data-expected="ink" data-any-ink="true"><img data-noise="3" alt=""></div>
+  <div class="cell" data-fixture="noise4"     data-expected="ink" data-any-ink="true"><img data-noise="4" alt=""></div>
+</div>
+
+<div id="report"></div>
+
+<script>
+'use strict';
+
+const PIXEL_RATIO = 4;
+const CAPTURE_TIMEOUT_MS = 120000;
+const results = [];
+const statusEl = document.getElementById('status');
+const root = document.getElementById('capture-root');
+
+report({ stage: 'main-script-started' });
+
+function setStatus(text) {
+  statusEl.textContent = text;
+  document.title = text;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const timer = setTimeout(() => reject(new Error('script load timeout: ' + src)), 15000);
+    script.onload = () => { clearTimeout(timer); resolve(); };
+    script.onerror = () => { clearTimeout(timer); reject(new Error('script load failed: ' + src)); };
+    script.src = src;
+    document.head.appendChild(script);
+  });
+}
+
+function withTimeout(promise, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT ' + label)), CAPTURE_TIMEOUT_MS)),
+  ]);
+}
+
+function makeDataUrlPng(runTag) {
+  const c = document.createElement('canvas');
+  c.width = 32; c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ff00ff';
+  ctx.fillRect(0, 0, 32, 32);
+  let hash = 0;
+  for (const ch of runTag) hash = (hash * 31 + ch.charCodeAt(0)) % 200;
+  ctx.fillStyle = 'rgb(' + (55 + hash) + ',0,255)';
+  ctx.fillRect(0, 0, 1, 1);
+  return c.toDataURL();
+}
+
+function softTimeout(promise, ms) {
+  return Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms))]);
+}
+
+/// decode() may reject spuriously under memory pressure, and load may already have finished -
+/// so never rely on either alone, and never let a fixture wait block the run.
+function whenImageReady(img) {
+  const loaded = img.complete
+    ? Promise.resolve()
+    : new Promise(resolve => {
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+  return softTimeout(loaded.then(() => img.decode().catch(() => {})), 10000);
+}
+
+/// Heavy decode-pressure asset with no network dependence: 1200x1200 random noise is
+/// incompressible, so the PNG data URL is large and every draw pays a real decode cost.
+function makeNoiseDataUrl(seed, runTag) {
+  const size = 1200;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  const imageData = ctx.createImageData(size, size);
+  let state = seed * 2654435761;
+  for (const ch of runTag) state = (state ^ ch.charCodeAt(0)) * 16777619;
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    data[i] = state & 255;
+    data[i + 1] = (state >> 8) & 255;
+    data[i + 2] = (state >> 16) & 255;
+    data[i + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return c.toDataURL();
+}
+
+async function setFixtureSources(runTag) {
+  const waits = [];
+  for (const img of root.querySelectorAll('img[data-asset]')) {
+    const suffix = img.dataset.suffix ? img.dataset.suffix + '-' : '';
+    img.src = img.dataset.asset + '?v=' + suffix + runTag;
+    waits.push(whenImageReady(img));
+  }
+  for (const img of root.querySelectorAll('img[data-noise]')) {
+    img.src = makeNoiseDataUrl(Number(img.dataset.noise), runTag);
+    waits.push(whenImageReady(img));
+  }
+  const dataImg = root.querySelector('.data-url-img');
+  dataImg.src = makeDataUrlPng(runTag);
+  waits.push(whenImageReady(dataImg));
+  for (const box of root.querySelectorAll('[data-bg-asset]')) {
+    const url = box.dataset.bgAsset + '?v=' + runTag;
+    box.style.backgroundImage = 'url("' + url + '")';
+    const pre = new Image();
+    pre.src = url;
+    waits.push(whenImageReady(pre));
+  }
+  await softTimeout(Promise.all(waits), 20000);
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+async function stabilizedCapture(lib, node, opts) {
+  let previous = null;
+  let first = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const current = await lib.toPng(node, opts);
+    if (first === null) first = current;
+    if (previous !== null && current === previous) {
+      return { dataUrl: current, first, attempts: attempt };
+    }
+    previous = current;
+  }
+  return { dataUrl: previous, first, attempts: 4 };
+}
+
+async function decodeWaitCapture(lib, node, opts) {
+  const svgDataUrl = await lib.toSvg(node, opts);
+  const svgText = decodeURIComponent(svgDataUrl.substring(svgDataUrl.indexOf(',') + 1));
+  const nestedUrls = new Set();
+  for (const m of svgText.matchAll(/(?:src|href|xlink:href)="(data:image\/[^"]+)"/g)) nestedUrls.add(m[1]);
+  for (const m of svgText.matchAll(/url\((?:&quot;|"|')?(data:image\/[^)"'&]+)/g)) nestedUrls.add(m[1]);
+  await Promise.all([...nestedUrls].map(async url => {
+    try { const i = new Image(); i.src = url; await i.decode(); } catch (e) { /* keep going */ }
+  }));
+  const img = new Image();
+  const loaded = new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+  img.src = svgDataUrl;
+  await loaded;
+  try { await img.decode(); } catch (e) { /* older engines */ }
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  const rect = node.getBoundingClientRect();
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(rect.width * PIXEL_RATIO);
+  canvas.height = Math.round(rect.height * PIXEL_RATIO);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL();
+}
+
+async function sampleVerdicts(pngDataUrl, pipeline, phase) {
+  const img = new Image();
+  const loaded = new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+  img.src = pngDataUrl;
+  await loaded;
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width; canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const rootRect = root.getBoundingClientRect();
+  const scale = img.width / rootRect.width;
+  for (const cell of root.querySelectorAll('.cell')) {
+    const cellRect = cell.getBoundingClientRect();
+    if (cell.dataset.anyInk === 'true') {
+      const points = [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5], [0.5, 0.3], [0.5, 0.7]];
+      let inkPixel = null;
+      for (const point of points) {
+        const px = Math.round((cellRect.left - rootRect.left + cellRect.width * point[0]) * scale);
+        const py = Math.round((cellRect.top - rootRect.top + cellRect.height * point[1]) * scale);
+        const d = ctx.getImageData(px, py, 1, 1).data;
+        if (!((d[0] > 235 && d[1] > 235 && d[2] > 235) || d[3] < 30)) { inkPixel = d; break; }
+      }
+      results.push({ pipeline, phase, fixture: cell.dataset.fixture, expected: 'ink', got: inkPixel ? inkPixel[0] + ',' + inkPixel[1] + ',' + inkPixel[2] + ',' + inkPixel[3] : 'all-white', verdict: inkPixel ? 'PASS' : 'BLANK' });
+      continue;
+    }
+    const x = Math.round((cellRect.left - rootRect.left + cellRect.width / 2) * scale);
+    const y = Math.round((cellRect.top - rootRect.top + cellRect.height / 2) * scale);
+    const data = ctx.getImageData(x, y, 1, 1).data;
+    const r = data[0], g = data[1], b = data[2], a = data[3];
+    const expected = cell.dataset.expected.split(',').map(Number);
+    let verdict;
+    if (Math.abs(r - expected[0]) < 60 && Math.abs(g - expected[1]) < 60 && Math.abs(b - expected[2]) < 60 && a > 200) {
+      verdict = 'PASS';
+    } else if ((r > 235 && g > 235 && b > 235) || a < 30) {
+      verdict = 'BLANK';
+    } else {
+      verdict = 'OTHER';
+    }
+    results.push({ pipeline, phase, fixture: cell.dataset.fixture, expected: cell.dataset.expected, got: r + ',' + g + ',' + b + ',' + a, verdict });
+  }
+}
+
+function recordFailure(pipeline, phase, error) {
+  const message = String(error && error.message || error);
+  const verdict = message.indexOf('TIMEOUT') === 0 ? 'TIMEOUT' : 'ERROR';
+  for (const cell of root.querySelectorAll('.cell')) {
+    results.push({ pipeline, phase, fixture: cell.dataset.fixture, expected: cell.dataset.expected, got: message.substring(0, 120), verdict });
+  }
+}
+
+async function runPipeline(name, capture) {
+  report({ stage: 'phase', pipeline: name });
+  setStatus('running ' + name + ' cold');
+  await setFixtureSources(name + '-' + Date.now());
+  try {
+    const coldStart = performance.now();
+    const coldResult = await withTimeout(capture(), name + '-cold');
+    results.push({ pipeline: name, phase: 'meta', fixture: '_ms-cold', expected: '', got: String(Math.round(performance.now() - coldStart)), verdict: 'PASS' });
+    if (coldResult.first !== undefined) {
+      await sampleVerdicts(coldResult.first, name, 'cold-first');
+      await sampleVerdicts(coldResult.dataUrl, name, 'cold-final');
+      results.push({ pipeline: name, phase: 'meta', fixture: '_attempts', expected: '', got: String(coldResult.attempts), verdict: 'PASS' });
+    } else {
+      await sampleVerdicts(coldResult, name, 'cold');
+    }
+  } catch (error) {
+    recordFailure(name, 'cold', error);
+  }
+  setStatus('running ' + name + ' warm');
+  try {
+    const warmResult = await withTimeout(capture(), name + '-warm');
+    await sampleVerdicts(warmResult.dataUrl !== undefined ? warmResult.dataUrl : warmResult, name, 'warm');
+  } catch (error) {
+    recordFailure(name, 'warm', error);
+  }
+}
+
+async function runAll() {
+  results.length = 0;
+  const opts = { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', cacheBust: false, skipFonts: true };
+  const pipelines = [
+    ['v11-stock', () => window.h2i_v11.toPng(root, opts)],
+    ['v13-stock', () => window.h2i_v13.toPng(root, opts)],
+    ['v13-stabilized', () => stabilizedCapture(window.h2i_v13, root, opts)],
+    ['v13-decodewait', () => decodeWaitCapture(window.h2i_v13, root, opts)],
+    ['pkg-interop', async () => {
+      const interopModule = await import('./html-to-image-interop.js');
+      return interopModule.toDataUrl(root, 'png', { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', skipFonts: true }, null);
+    }],
+  ];
+  for (const entry of pipelines) {
+    await runPipeline(entry[0], entry[1]);
+    report({ stage: 'progress', pipeline: entry[0], results });
+  }
+  const blanks = results.filter(x => x.verdict === 'BLANK').length;
+  const errors = results.filter(x => x.verdict === 'ERROR' || x.verdict === 'TIMEOUT').length;
+  const others = results.filter(x => x.verdict === 'OTHER').length;
+  const summary = 'DONE blank=' + blanks + ' error=' + errors + ' other=' + others;
+  renderReport();
+  report({ stage: 'results', userAgent: navigator.userAgent, summary, results });
+  setStatus(summary);
+}
+
+function renderReport() {
+  const rows = results.map(x =>
+    '<tr class="' + x.verdict + '"><td>' + x.pipeline + '</td><td>' + x.phase + '</td><td>' + x.fixture + '</td><td>' + x.expected + '</td><td>' + x.got + '</td><td>' + x.verdict + '</td></tr>').join('');
+  document.getElementById('report').innerHTML =
+    '<table><tr><th>pipeline</th><th>phase</th><th>fixture</th><th>expected</th><th>got</th><th>verdict</th></tr>' + rows + '</table>';
+}
+
+async function boot() {
+  try {
+    setStatus('loading v1.11.11');
+    await loadScript('html-to-image-1.11.11.js');
+    window.h2i_v11 = window.htmlToImage;
+    window.htmlToImage = undefined;
+    report({ stage: 'v11-loaded', ok: typeof window.h2i_v11 === 'object' });
+
+    setStatus('loading v1.11.13');
+    await loadScript('html-to-image-1.11.13.js');
+    window.h2i_v13 = window.htmlToImage;
+    report({ stage: 'v13-loaded', ok: typeof window.h2i_v13 === 'object' });
+
+    setStatus('ready');
+    await runAll();
+  } catch (error) {
+    const message = String(error && error.message || error);
+    report({ stage: 'boot-failed', message });
+    setStatus('BOOT FAILED: ' + message);
+  }
+}
+
+document.getElementById('run').addEventListener('click', () => { runAll(); });
+report({ stage: 'main-script-parsed' });
+boot();
+</script>
+</body>
+</html>
