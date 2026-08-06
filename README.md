@@ -96,6 +96,34 @@ foreach (var frame in frames)
 }
 ```
 
+### iOS/WebKit blank images and hangs - handled by default
+
+Two Safari/WebKit failure modes are mitigated in the interop layer, on by default:
+
+- **Blank large images.** WebKit rasterises the capture's intermediate SVG before large embedded
+  images have finished decoding, so on iOS the first capture of an image-heavy subtree comes back
+  with those images blank - and a plain retry is not enough, because a single re-capture can stay
+  blank too. Measured on a real iPhone: repeated captures converge on the complete image by the
+  second or third attempt, while pre-decoding the embedded images does not help (WebKit's SVG-image
+  loader does not share the page's decode cache). Captures therefore repeat until two consecutive
+  results are identical, capped by `StabilizeAttempts` (default 3, set 1 to opt out). A stabilised
+  capture of a heavy subtree costs roughly one extra attempt (~2x a single capture) on the first
+  call.
+- **Captures that never return.** Safari rejects `HTMLImageElement.decode()` under memory pressure
+  even for successfully loaded images, and upstream's `createImage` has no rejection path - the
+  capture promise then never settles. Every capture is bounded by `CaptureTimeoutMs` (default
+  30000) and fails with a descriptive error instead of hanging forever.
+
+Subtrees with genuinely dynamic content (a running clock, an animation) never produce two identical
+captures; they take `StabilizeAttempts` captures and return the last one. Set `StabilizeAttempts = 1`
+for those.
+
+Both mitigations are also proposed upstream: the never-settling capture as
+https://github.com/bubkoo/html-to-image/pull/589 and the stabilisation loop as an opt-in
+`stabilizationAttempts` option in https://github.com/bubkoo/html-to-image/pull/591. Once a vendored
+release contains 589, the timeout stays as a plain safety bound; once it contains 591, the interop's
+`captureStable` loop can be replaced by forwarding `StabilizeAttempts` to upstream's option.
+
 ## Coverage vs. html-to-image 1.11.13
 
 **Complete.** Every upstream entry point and every option is reachable.
@@ -124,6 +152,8 @@ Coverage is measured against html-to-image's published type definitions - `lib/i
 ⚠️ **`ToJpegBytesAsync` does not call upstream's `toBlob`.**
 
 Upstream's `toBlob` forwards its options to `toCanvas` but then calls its own internal `canvasToBlob(canvas)` with **no options at all**, so `type` and `quality` are silently dropped - asking it for a JPEG returns a PNG at quality 1. This wrapper calls `toCanvas` and does the canvas-to-blob step itself, which is what makes `ToJpegBytesAsync` return real JPEG bytes and `Quality` take effect. Pinned by the `Capture_JpegStory_ReturnsBytesWithAJpegSignature` browser test.
+
+Upstreamed as https://github.com/bubkoo/html-to-image/pull/590 - once that ships in a vendored release, the manual canvas-to-blob step in `toStream` can be replaced with upstream `toBlob` (keep the browser test either way).
 
 ## Captures stall in hidden tabs - by upstream design
 

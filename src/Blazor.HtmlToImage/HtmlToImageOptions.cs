@@ -117,6 +117,38 @@ public sealed class HtmlToImageOptions
     /// </summary>
     [JsonPropertyName("fetchRequestInit")]
     public FetchRequestInit? FetchRequestInit { get; set; }
+
+    /// <summary>
+    /// Maximum captures taken until two consecutive results are identical; the last result is
+    /// returned. Defaults to 3. Set 1 to take a single capture with no stabilisation.
+    /// </summary>
+    /// <remarks>
+    /// WebKit rasterises the capture's intermediate SVG before large embedded images have decoded,
+    /// so on iOS/Safari the first capture of an image-heavy subtree comes back with those images
+    /// blank - and a plain retry is not enough, because the decoded output stays wrong until the
+    /// engine settles. Measured on a real iPhone: repeated captures converge on the complete image
+    /// by the second or third attempt, while single captures stay blank indefinitely; pre-decoding
+    /// the embedded images does not help because WebKit's SVG-image loader does not share the
+    /// page's decode cache. Handled by the interop layer, never forwarded to html-to-image.
+    /// Upstreamed as https://github.com/bubkoo/html-to-image/pull/591.
+    /// </remarks>
+    [JsonPropertyName("stabilizeAttempts")]
+    public int? StabilizeAttempts { get; set; }
+
+    /// <summary>
+    /// Upper bound in milliseconds for a single capture attempt before it fails with a descriptive
+    /// error. Defaults to 30000.
+    /// </summary>
+    /// <remarks>
+    /// html-to-image's internal image loading can hang forever: Safari rejects
+    /// <c>HTMLImageElement.decode()</c> under memory pressure and upstream's <c>createImage</c> has
+    /// no rejection path, leaving the capture promise permanently unsettled. The bound turns that
+    /// hang into an error the caller can see. Handled by the interop layer, never forwarded to
+    /// html-to-image. The upstream hang itself is fixed by
+    /// https://github.com/bubkoo/html-to-image/pull/589.
+    /// </remarks>
+    [JsonPropertyName("captureTimeoutMs")]
+    public int? CaptureTimeoutMs { get; set; }
 }
 
 /// <summary>
