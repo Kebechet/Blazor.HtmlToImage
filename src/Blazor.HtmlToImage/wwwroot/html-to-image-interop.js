@@ -4,11 +4,21 @@
 // render. Awaiting the script's own load event is the real readiness signal - polling for the
 // global would still be a race on a slow device, only a noisier one.
 const READY_PROMISE_KEY = '__kebechetHtmlToImageReady';
+const LOAD_FUNCTION_KEY = '__kebechetHtmlToImageLoad';
 
 async function getLibrary() {
-	const ready = globalThis[READY_PROMISE_KEY];
-	if (ready) {
-		await ready;
+	if (!globalThis.htmlToImage) {
+		const ready = globalThis[READY_PROMISE_KEY];
+		try {
+			await ready;
+		} catch {
+			// The initializer's load failed. Load again rather than rethrowing the same rejection on
+			// every later capture; the identity check keeps concurrent captures to a single reload.
+			if (globalThis[READY_PROMISE_KEY] === ready) {
+				globalThis[READY_PROMISE_KEY] = globalThis[LOAD_FUNCTION_KEY]();
+			}
+			await globalThis[READY_PROMISE_KEY];
+		}
 	}
 
 	const library = globalThis.htmlToImage;
