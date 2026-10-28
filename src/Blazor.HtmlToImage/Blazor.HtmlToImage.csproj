@@ -22,8 +22,12 @@
     <PackageIcon>icon.png</PackageIcon>
     <PackageTags>blazor;html-to-image;screenshot;png;jpeg;svg;dom-to-image;canvas;share</PackageTags>
     <!-- First three parts track the bundled html-to-image release; the fourth is this wrapper's own revision. -->
-    <Version>1.11.13.2</Version>
-    <PackageReleaseNotes>Replaces 1.11.13.1, which was packed from stale local build output and should not be used: its static web asset manifest still described the 1.11.13 html-to-image-interop.js (old integrity and length under the same fingerprinted URL), so apps enforcing import-map integrity could not load the module and browsers that had cached 1.11.13 kept running the old one, and its net6.0-net9.0 assemblies were built from 1.11.13 without the options below. This release is built by CI from a clean checkout; the code is unchanged from 1.11.13.1. Changes since 1.11.13: captures repeat until two consecutive results are identical (StabilizeAttempts, default 3), because WebKit rasterizes the capture before large embedded images have decoded and leaves them blank; every capture attempt is bounded by CaptureTimeoutMs (default 30000), because upstream's createImage never settles when Safari rejects HTMLImageElement.decode() under memory pressure.</PackageReleaseNotes>
+    <Version>1.11.13.3</Version>
+    <PackageReleaseNotes>Breaking: IHtmlToImageService no longer extends IAsyncDisposable - the DI container owns the scoped instance and disposes it with the scope. ToPixelDataAsync returns PixelData (Width, Height, Bytes) instead of byte[]. The Type option is removed: only upstream's toBlob reads it, and the wrapper never calls toBlob. Every method gains an optional CancellationToken, which keeps call sites compiling but breaks custom implementations of the interface.
+Fixed: Blazor Server - data URLs, font CSS and ImageLoadFailed no longer travel as single SignalR messages, which closed the circuit above the default 32 KB. ToPixelDataAsync returned only the top-left corner of the canvas whenever the pixel ratio was above 1. A FetchRequestInit with any member left unset made every resource fetch fail, leaving fetched images blank. A failed first load of the html-to-image script failed every later capture on the page. Disposing the service while the first capture was still importing the interop module leaked the module and threw the semaphore's own ObjectDisposedException.
+Changed: ImageLoadFailed sends at most the first 2048 characters of the failed image's source.
+Added: MaxResultBytes to raise the 32 MB result limit; cancellation on every method.
+Tests: the browser suite runs in Chrome and WebKit, against both the project and the packed package, and on a Blazor Server host; the publish workflow runs it against the exact package before pushing.</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
