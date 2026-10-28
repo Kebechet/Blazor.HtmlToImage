@@ -188,7 +188,8 @@
             <CapturePlayground TestId="fetch"
                                Kind="CapturePlayground.CaptureKind.Png"
                                Options="_fetchOptions"
-                               Hint="FetchRequestInit applies request options (CORS mode, credentials, cache, referrer) to every resource fetched while inlining the subtree - the fix when images or fonts come back blank for permission reasons. Here: cors mode, credentials omitted, cache bypassed." />
+                               ShowFetchedImage="true"
+                               Hint="FetchRequestInit applies request options (CORS mode, credentials, cache, referrer) to every resource fetched while inlining the subtree - the fix when images or fonts come back blank for permission reasons. Here: cors mode, credentials omitted, cache bypassed, and the other members left unset. The teal square is fetched with those options and must appear in the capture." />
         </Template>
     </Story>
 

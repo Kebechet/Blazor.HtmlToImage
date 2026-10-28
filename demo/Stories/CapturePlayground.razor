@@ -21,6 +21,12 @@
                ImagePlaceholder decides whether the output shows a gap or the placeholder art. *@
             <img src="does-not-exist-anywhere.png" alt="" width="40" height="40" />
         }
+        @if (ShowFetchedImage)
+        {
+            @* A same-origin solid #2a9d8f square. html-to-image re-fetches it with FetchRequestInit
+               while inlining, so its colour in the capture proves the request options let it load. *@
+            <img src="img/fetched-square.svg" alt="" width="40" height="40" data-testid="@($"{TestId}-fetched-image")" />
+        }
         @if (ShowExcludedBadge)
         {
             @* Carries the class the story passes as ExcludeCssClasses. Excluding never shrinks the
@@ -76,6 +82,10 @@
     /// <summary>Adds an image whose URL cannot resolve, so the ImageLoadFailed event has something to report.</summary>
     [Parameter]
     public bool ShowBrokenImage { get; set; }
+
+    /// <summary>Adds a same-origin image that the capture has to fetch, so request options have something to apply to.</summary>
+    [Parameter]
+    public bool ShowFetchedImage { get; set; }
 
     /// <summary>
     /// Calls <c>GetFontEmbedCssAsync</c> before the capture and reports the resulting CSS length in

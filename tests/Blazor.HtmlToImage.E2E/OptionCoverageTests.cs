@@ -133,18 +133,34 @@ public sealed class OptionCoverageTests
     }
 
     [Fact]
-    public async Task FetchRequestInit_ReachesTheResourceFetchesWithoutBreakingTheCapture()
+    public async Task FetchRequestInit_PartiallySet_StillLoadsTheImagesItFetches()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--fetch-request-init");
+        await canvas.GetByTestId("fetch-fetched-image").WaitForAsync();
+        var imageFraction = await _fixture.Page.EvaluateAsync<double[]>(
+            @"() => {
+                const poster = document.querySelector('[data-testid=""fetch-poster""]').getBoundingClientRect();
+                const image = document.querySelector('[data-testid=""fetch-fetched-image""]').getBoundingClientRect();
+                return [
+                    (image.x - poster.x + image.width / 2) / poster.width,
+                    (image.y - poster.y + image.height / 2) / poster.height,
+                ];
+            }");
 
         // Act
         var state = await _fixture.CaptureAsync(canvas, "fetch");
 
         // Assert
-        // A malformed RequestInit makes the browser throw on the first resource fetch rather than
-        // being ignored, so a successful capture is what proves the shape survived serialization.
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
+        // The story sets four RequestInit members and leaves four unset - the usual way to use it.
+        // An unset member that reaches fetch() as null makes the browser reject the request, and
+        // upstream swallows that per image, so the capture still succeeds with the image blank. Only
+        // the image's own #2a9d8f in the pixels proves the fetch went through.
+        var pixel = await _fixture.SamplePreviewPixelAsync("fetch", imageFraction[0], imageFraction[1]);
+        Assert.True(
+            Math.Abs(pixel[0] - 0x2a) <= 12 && Math.Abs(pixel[1] - 0x9d) <= 12 && Math.Abs(pixel[2] - 0x8f) <= 12,
+            $"Expected the fetched #2a9d8f square in the capture, sampled rgba({pixel[0]},{pixel[1]},{pixel[2]},{pixel[3]}).");
         _fixture.AssertNoJsErrors();
     }
 }

@@ -138,10 +138,23 @@ function buildFilter(excludeCssClasses, excludeSelector) {
 	};
 }
 
+function withoutUnsetMembers(source) {
+	const result = {};
+	for (const [key, value] of Object.entries(source)) {
+		if (value !== null && value !== undefined) {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
 /**
  * Blazor's interop serializer emits every unset nullable as JSON null. Passing those straight
  * through would override html-to-image's own defaults with null - so unset members are dropped
  * here rather than forwarded.
+ * fetchRequestInit needs the same one level down: upstream hands it to fetch() as-is, and fetch
+ * rejects null for mode, redirect, headers or referrer, so a partly-set FetchRequestInit would fail
+ * every resource request.
  */
 function buildOptions(options, errorListener) {
 	const result = {};
@@ -153,7 +166,7 @@ function buildOptions(options, errorListener) {
 			if (key === 'excludeCssClasses' || key === 'excludeSelector' || key === 'stabilizeAttempts' || key === 'captureTimeoutMs') {
 				continue;
 			}
-			result[key] = value;
+			result[key] = key === 'fetchRequestInit' ? withoutUnsetMembers(value) : value;
 		}
 
 		const filter = buildFilter(options.excludeCssClasses, options.excludeSelector);
