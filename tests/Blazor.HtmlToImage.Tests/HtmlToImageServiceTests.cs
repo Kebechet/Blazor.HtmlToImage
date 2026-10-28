@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using NSubstitute;
@@ -67,6 +68,99 @@ public class HtmlToImageServiceTests
         var exception = await Should.ThrowAsync<ObjectDisposedException>(() => capture);
         exception.ObjectName.ShouldBe(nameof(HtmlToImageService));
         await module.Received(1).DisposeAsync();
+    }
+
+    public static TheoryData<string, bool> Captures()
+    {
+        var captures = new TheoryData<string, bool>();
+        string[] captureNames =
+        [
+            nameof(IHtmlToImageService.ToPngAsync),
+            nameof(IHtmlToImageService.ToJpegAsync),
+            nameof(IHtmlToImageService.ToSvgAsync),
+            nameof(IHtmlToImageService.ToPngBytesAsync),
+            nameof(IHtmlToImageService.ToJpegBytesAsync),
+            nameof(IHtmlToImageService.ToPixelDataAsync),
+            nameof(IHtmlToImageService.GetFontEmbedCssAsync),
+            nameof(IHtmlToImageService.ToCanvasAsync),
+        ];
+        foreach (var captureName in captureNames)
+        {
+            captures.Add(captureName, true);
+            captures.Add(captureName, false);
+        }
+
+        return captures;
+    }
+
+    [Theory]
+    [MemberData(nameof(Captures))]
+    public async Task Capture_CancelledWhileTheBrowserIsCapturing_StopsWaiting(string captureName, bool isByElementReference)
+    {
+        // Arrange
+        var module = Substitute.For<IJSObjectReference>();
+        StubImport(new ValueTask<IJSObjectReference>(module));
+        StubPendingUntilCancelled<string>(module);
+        StubPendingUntilCancelled<IJSStreamReference>(module);
+        StubPendingUntilCancelled<IJSObjectReference>(module);
+        var htmlToImageService = new HtmlToImageService(_jsRuntime);
+        using var cancellation = new CancellationTokenSource();
+        var capture = Capture(htmlToImageService, captureName, isByElementReference, cancellation.Token);
+
+        // Act
+        await cancellation.CancelAsync();
+
+        // Assert
+        // html-to-image has no abort, so the browser finishes the capture regardless - cancellation is
+        // about the caller no longer waiting for it. The bound turns "never honoured" into a failure
+        // instead of a hung test run.
+        await Should.ThrowAsync<OperationCanceledException>(() => capture.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    private static Task Capture(IHtmlToImageService htmlToImageService, string captureName, bool isByElementReference, CancellationToken cancellationToken)
+    {
+        const string elementId = "poster";
+        var element = new ElementReference(elementId);
+        return (captureName, isByElementReference) switch
+        {
+            (nameof(IHtmlToImageService.ToPngAsync), true) => htmlToImageService.ToPngAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToPngAsync), false) => htmlToImageService.ToPngAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToJpegAsync), true) => htmlToImageService.ToJpegAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToJpegAsync), false) => htmlToImageService.ToJpegAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToSvgAsync), true) => htmlToImageService.ToSvgAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToSvgAsync), false) => htmlToImageService.ToSvgAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToPngBytesAsync), true) => htmlToImageService.ToPngBytesAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToPngBytesAsync), false) => htmlToImageService.ToPngBytesAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToJpegBytesAsync), true) => htmlToImageService.ToJpegBytesAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToJpegBytesAsync), false) => htmlToImageService.ToJpegBytesAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToPixelDataAsync), true) => htmlToImageService.ToPixelDataAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToPixelDataAsync), false) => htmlToImageService.ToPixelDataAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.GetFontEmbedCssAsync), true) => htmlToImageService.GetFontEmbedCssAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.GetFontEmbedCssAsync), false) => htmlToImageService.GetFontEmbedCssAsync(elementId, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToCanvasAsync), true) => htmlToImageService.ToCanvasAsync(element, cancellationToken: cancellationToken),
+            (nameof(IHtmlToImageService.ToCanvasAsync), false) => htmlToImageService.ToCanvasAsync(elementId, cancellationToken: cancellationToken),
+            _ => throw new NotImplementedException($"Unhandled capture {captureName}")
+        };
+    }
+
+    /// <summary>
+    /// Every interop call stays pending until its token is cancelled, as Blazor's JS runtime behaves
+    /// for a JS promise that has not settled. The overloads without a token never complete, so a call
+    /// that drops the token waits forever.
+    /// </summary>
+    private static void StubPendingUntilCancelled<TValue>(IJSObjectReference module)
+    {
+        module.InvokeAsync<TValue>(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<object?[]?>())
+            .Returns(callInfo => new ValueTask<TValue>(PendingUntilCancelled<TValue>(callInfo.ArgAt<CancellationToken>(1))));
+        module.InvokeAsync<TValue>(Arg.Any<string>(), Arg.Any<object?[]?>())
+            .Returns(new ValueTask<TValue>(new TaskCompletionSource<TValue>().Task));
+    }
+
+    private static Task<TValue> PendingUntilCancelled<TValue>(CancellationToken cancellationToken)
+    {
+        var pending = new TaskCompletionSource<TValue>();
+        cancellationToken.Register(() => pending.TrySetCanceled(cancellationToken));
+        return pending.Task;
     }
 
     private void StubImport(ValueTask<IJSObjectReference> import)

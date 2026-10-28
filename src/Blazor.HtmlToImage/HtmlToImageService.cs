@@ -36,21 +36,21 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
     }
 
     /// <inheritdoc />
-    public Task<IJSObjectReference> ToCanvasAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<IJSObjectReference> ToCanvasAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureCanvas(element, options);
+        return CaptureCanvas(element, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<IJSObjectReference> ToCanvasAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<IJSObjectReference> ToCanvasAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureCanvas(elementId, options);
+        return CaptureCanvas(elementId, options, cancellationToken);
     }
 
-    private async Task<IJSObjectReference> CaptureCanvas(object target, HtmlToImageOptions? options)
+    private async Task<IJSObjectReference> CaptureCanvas(object target, HtmlToImageOptions? options, CancellationToken cancellationToken)
     {
-        var module = await GetModule();
-        return await module.InvokeAsync<IJSObjectReference>("toCanvas", target, options, ErrorListener);
+        var module = await GetModule(cancellationToken);
+        return await module.InvokeAsync<IJSObjectReference>("toCanvas", cancellationToken, new object?[] { target, options, ErrorListener });
     }
 
     /// <summary>
@@ -77,106 +77,110 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
     }
 
     /// <inheritdoc />
-    public Task<string> ToPngAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<string> ToPngAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(element, CaptureFormat.Png, options);
+        return CaptureDataUrl(element, CaptureFormat.Png, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<string> ToPngAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<string> ToPngAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(elementId, CaptureFormat.Png, options);
+        return CaptureDataUrl(elementId, CaptureFormat.Png, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<string> ToJpegAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<string> ToJpegAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(element, CaptureFormat.Jpeg, options);
+        return CaptureDataUrl(element, CaptureFormat.Jpeg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<string> ToJpegAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<string> ToJpegAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(elementId, CaptureFormat.Jpeg, options);
+        return CaptureDataUrl(elementId, CaptureFormat.Jpeg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<string> ToSvgAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<string> ToSvgAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(element, CaptureFormat.Svg, options);
+        return CaptureDataUrl(element, CaptureFormat.Svg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<string> ToSvgAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<string> ToSvgAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureDataUrl(elementId, CaptureFormat.Svg, options);
+        return CaptureDataUrl(elementId, CaptureFormat.Svg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPngBytesAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToPngBytesAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(element, CaptureFormat.Png, options);
+        return CaptureBytes(element, CaptureFormat.Png, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPngBytesAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToPngBytesAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(elementId, CaptureFormat.Png, options);
+        return CaptureBytes(elementId, CaptureFormat.Png, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToJpegBytesAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToJpegBytesAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(element, CaptureFormat.Jpeg, options);
+        return CaptureBytes(element, CaptureFormat.Jpeg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToJpegBytesAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToJpegBytesAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(elementId, CaptureFormat.Jpeg, options);
+        return CaptureBytes(elementId, CaptureFormat.Jpeg, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(element, CaptureFormat.PixelData, options);
+        return CaptureBytes(element, CaptureFormat.PixelData, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<byte[]> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(elementId, CaptureFormat.PixelData, options);
+        return CaptureBytes(elementId, CaptureFormat.PixelData, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<string> GetFontEmbedCssAsync(ElementReference element, HtmlToImageOptions? options = null)
+    public Task<string> GetFontEmbedCssAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        var module = await GetModule();
-        return await module.InvokeAsync<string>("getFontEmbedCss", element, options, ErrorListener);
+        return GetFontEmbedCss(element, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<string> GetFontEmbedCssAsync(string elementId, HtmlToImageOptions? options = null)
+    public Task<string> GetFontEmbedCssAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        var module = await GetModule();
-        return await module.InvokeAsync<string>("getFontEmbedCss", elementId, options, ErrorListener);
+        return GetFontEmbedCss(elementId, options, cancellationToken);
     }
 
-    private async Task<string> CaptureDataUrl(object target, CaptureFormat format, HtmlToImageOptions? options)
+    private async Task<string> GetFontEmbedCss(object target, HtmlToImageOptions? options, CancellationToken cancellationToken)
     {
-        var module = await GetModule();
-        return await module.InvokeAsync<string>("toDataUrl", target, format.ToJsName(), options, ErrorListener);
+        var module = await GetModule(cancellationToken);
+        return await module.InvokeAsync<string>("getFontEmbedCss", cancellationToken, new object?[] { target, options, ErrorListener });
     }
 
-    private async Task<byte[]> CaptureBytes(object target, CaptureFormat format, HtmlToImageOptions? options)
+    private async Task<string> CaptureDataUrl(object target, CaptureFormat format, HtmlToImageOptions? options, CancellationToken cancellationToken)
     {
-        var module = await GetModule();
+        var module = await GetModule(cancellationToken);
+        return await module.InvokeAsync<string>("toDataUrl", cancellationToken, new object?[] { target, format.ToJsName(), options, ErrorListener });
+    }
+
+    private async Task<byte[]> CaptureBytes(object target, CaptureFormat format, HtmlToImageOptions? options, CancellationToken cancellationToken)
+    {
+        var module = await GetModule(cancellationToken);
         await using var streamReference = await module.InvokeAsync<IJSStreamReference>(
-            "toStream", target, format.ToJsName(), options, ErrorListener);
+            "toStream", cancellationToken, new object?[] { target, format.ToJsName(), options, ErrorListener });
 
-        await using var stream = await streamReference.OpenReadStreamAsync(_maxStreamBytes);
+        await using var stream = await streamReference.OpenReadStreamAsync(_maxStreamBytes, cancellationToken);
         using var buffer = new MemoryStream();
-        await stream.CopyToAsync(buffer);
+        await stream.CopyToAsync(buffer, cancellationToken);
         return buffer.ToArray();
     }
 
@@ -190,7 +194,7 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
     /// import is what keeps that late module from outliving the service: <see cref="DisposeAsync"/>
     /// already ran and saw no module to dispose.
     /// </remarks>
-    private async Task<IJSObjectReference> GetModule()
+    private async Task<IJSObjectReference> GetModule(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         if (_module is not null)
@@ -198,7 +202,7 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
             return _module;
         }
 
-        await _moduleLock.WaitAsync();
+        await _moduleLock.WaitAsync(cancellationToken);
         try
         {
             if (_module is not null)
