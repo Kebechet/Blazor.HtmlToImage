@@ -68,6 +68,12 @@ var dataUrl = await _htmlToImage.ToPngAsync("poster");
 
 Both come back over a JS interop **stream**, never as a single interop message - which matters on Blazor Server, where one message is capped at 32 KB by default and a larger one closes the circuit. The largest result a capture may return is `MaxResultBytes` (default 32 MB).
 
+In a MAUI `BlazorWebView` the stream does not avoid base64 entirely: the WebView bridge only carries text, so `blazor.webview.js` base64-encodes each chunk on its way across. Streaming there keeps every bridge message small; it does not remove the encoding.
+
+### Cancellation
+
+Every method takes a `CancellationToken`. Cancelling stops the caller waiting; it does not stop the browser, because html-to-image has no abort - a cancelled capture still runs to completion (or to `CaptureTimeoutMs`) in the page and its result is discarded.
+
 ### Hosting models
 
 Blazor WebAssembly, Blazor Server (interactive server render mode) and Blazor Hybrid (MAUI `BlazorWebView`). The browser suite runs captures in a WebAssembly app and in a Server app pinned to SignalR's default 32 KB message limit; MAUI is verified on devices by hand.
@@ -117,8 +123,10 @@ Two Safari/WebKit failure modes are mitigated in the interop layer, on by defaul
   call.
 - **Captures that never return.** Safari rejects `HTMLImageElement.decode()` under memory pressure
   even for successfully loaded images, and upstream's `createImage` has no rejection path - the
-  capture promise then never settles. Every capture is bounded by `CaptureTimeoutMs` (default
-  30000) and fails with a descriptive error instead of hanging forever.
+  capture promise then never settles. Every capture **attempt** is bounded by `CaptureTimeoutMs`
+  (default 30000): an attempt that hangs fails the capture with a descriptive error instead of
+  hanging forever. The bound is per attempt, not per capture - a capture whose attempts each finish
+  just inside it can take up to `StabilizeAttempts` x `CaptureTimeoutMs` (90 s by default).
 
 Subtrees with genuinely dynamic content (a running clock, an animation) never produce two identical
 captures; they take `StabilizeAttempts` captures and return the last one. Set `StabilizeAttempts = 1`
@@ -169,9 +177,9 @@ Upstreamed as https://github.com/bubkoo/html-to-image/pull/590 - once that ships
 
 ## Captures stall in hidden tabs - by upstream design
 
-⚠️ **A capture started while the tab is hidden or fully occluded does not complete until the tab renders a frame again.** Nothing errors and nothing times out - the Task just stays pending, then resolves when the tab becomes visible.
+⚠️ **A capture started while the tab is hidden or fully occluded makes no progress until the tab renders a frame again.** If the tab becomes visible within `CaptureTimeoutMs`, the capture then completes normally. If it stays hidden longer, the attempt fails with the timeout error - the same applies to a MAUI app sent to the background mid-capture.
 
-This is upstream's own resolution path, not wrapper behaviour: html-to-image's `createImage` resolves every capture inside `img.decode().then(() => requestAnimationFrame(resolve))`, and browsers do not fire `requestAnimationFrame` for hidden documents. The normal case - capturing in response to a user action in a visible tab - never sees this. It matters only if a capture races a tab switch, or if you drive the page from automation that keeps it backgrounded (CDP screenshots force a frame, which un-stalls it).
+This is upstream's own resolution path, not wrapper behaviour: html-to-image's `createImage` resolves every capture inside `img.decode().then(() => requestAnimationFrame(resolve))`, and browsers do not fire `requestAnimationFrame` for hidden documents. Timers still fire there (throttled), which is why the timeout does. The normal case - capturing in response to a user action in a visible tab - never sees this. It matters only if a capture races a tab switch, or if you drive the page from automation that keeps it backgrounded (CDP screenshots force a frame, which un-stalls it).
 
 ## Vendored library provenance
 
@@ -183,6 +191,10 @@ This is upstream's own resolution path, not wrapper behaviour: html-to-image's `
 | SHA-256 | `a90b42909d80964269ef6d5f3d1e4a5a7e2a4c263a5d2a76a9e7151901343262` |
 
 The npm `dist` build is already minified - jsDelivr reports "skipped minification" for it - so it is vendored verbatim rather than re-minified, and the hash above verifies byte-for-byte against the tarball.
+
+## Versioning
+
+The first three parts of the version track the bundled html-to-image release - `1.11.13.x` bundles html-to-image 1.11.13 - and the fourth is this wrapper's own revision. That leaves no part to signal a breaking change, so ⚠️ **a revision can contain breaking changes to the wrapper's API**; each release's notes list them under "Breaking".
 
 ## License
 
