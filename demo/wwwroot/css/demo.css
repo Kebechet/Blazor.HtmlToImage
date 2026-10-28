@@ -40,6 +40,11 @@ body {
     gap: 10px;
 }
 
+/* A second, narrower subject, so two simultaneous captures are told apart by their widths. */
+.poster-narrow {
+    width: 200px;
+}
+
 .poster-title {
     font-size: 13px;
     letter-spacing: .08em;

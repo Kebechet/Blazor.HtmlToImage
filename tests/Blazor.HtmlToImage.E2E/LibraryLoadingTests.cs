@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Playwright;
 using Xunit;
 
@@ -47,7 +46,7 @@ public sealed class LibraryLoadingTests
 
         // Act
         await canvas.GetByTestId("png-capture").ClickAsync();
-        var state = await StoryState.WaitForAsync(canvas, "png-state", IsFinished, "the png story to finish capturing");
+        var state = await StoryState.WaitForAsync(canvas, "png-state", StoryState.IsFinished, "the png story to finish capturing");
 
         // Assert
         // The initializer's load failed once. Without a retry, every capture for the rest of the
@@ -55,11 +54,5 @@ public sealed class LibraryLoadingTests
         Assert.True(StoryState.Bool(state, "hasCaptured"), $"Expected the capture to succeed after a failed first load. State: {state}");
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
         Assert.Equal(2, libraryRequestCount);
-    }
-
-    private static bool IsFinished(JsonElement state)
-    {
-        return state.TryGetProperty("hasCaptured", out var hasCaptured) &&
-            (hasCaptured.GetBoolean() || state.GetProperty("error").ValueKind == JsonValueKind.String);
     }
 }

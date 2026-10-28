@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Xunit;
 
 namespace Blazor.HtmlToImage.E2E;
@@ -33,7 +32,7 @@ public sealed class ServerCaptureTests
 
         // Act
         await page.GetByTestId(format).ClickAsync();
-        var state = await StoryState.WaitForAsync(page, "state", IsFinished, $"the {format} data URL to arrive");
+        var state = await StoryState.WaitForAsync(page, "state", StoryState.IsFinished, $"the {format} data URL to arrive");
 
         // Assert
         Assert.True(StoryState.Bool(state, "hasCaptured"), $"Expected the {format} capture to succeed. State: {state}{Environment.NewLine}{_fixture.ServerLog()}");
@@ -51,7 +50,7 @@ public sealed class ServerCaptureTests
 
         // Act
         await page.GetByTestId("undecodable").ClickAsync();
-        var state = await StoryState.WaitForAsync(page, "state", IsFinished, "the capture with an undecodable image to finish");
+        var state = await StoryState.WaitForAsync(page, "state", StoryState.IsFinished, "the capture with an undecodable image to finish");
 
         // Assert
         // The failed image arrives as a data URL of its 40 KB of bytes. Sent whole, that one event
@@ -60,11 +59,5 @@ public sealed class ServerCaptureTests
         Assert.True(StoryState.Int(state, "failedImageCount") > 0, $"Expected the undecodable image to be reported. State: {state}");
         Assert.InRange(StoryState.Int(state, "longestFailedImageLength"), 1, ReportedImageSourceLimit);
         _fixture.AssertNoJsErrors();
-    }
-
-    private static bool IsFinished(JsonElement state)
-    {
-        return state.TryGetProperty("hasCaptured", out var hasCaptured) &&
-            (hasCaptured.GetBoolean() || state.GetProperty("error").ValueKind == JsonValueKind.String);
     }
 }

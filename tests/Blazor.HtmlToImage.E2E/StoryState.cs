@@ -56,6 +56,16 @@ internal static class StoryState
         throw new InvalidOperationException("unreachable");
     }
 
+    /// <summary>
+    /// True once a capture has either succeeded or reported its error - for tests that expect, or
+    /// must tell apart, a failing capture rather than waiting out the timeout on one.
+    /// </summary>
+    public static bool IsFinished(JsonElement state)
+    {
+        return state.TryGetProperty("hasCaptured", out var hasCaptured) &&
+            (hasCaptured.GetBoolean() || state.GetProperty("error").ValueKind == JsonValueKind.String);
+    }
+
     /// <summary>How many times the story recorded a named event.</summary>
     public static int EventCount(JsonElement state, string name)
     {

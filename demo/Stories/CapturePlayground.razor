@@ -27,6 +27,12 @@
                while inlining, so its colour in the capture proves the request options let it load. *@
             <img src="img/fetched-square.svg" alt="" width="40" height="40" data-testid="@($"{TestId}-fetched-image")" />
         }
+        @if (ShowHangingImage)
+        {
+            @* Served normally this 404s at once. The browser test holds its request open instead, so
+               the capture never finishes on its own and CaptureTimeoutMs is what ends it. *@
+            <img src="img/never-arrives.png" alt="" width="40" height="40" />
+        }
         @if (ShowExcludedBadge)
         {
             @* Carries the class the story passes as ExcludeCssClasses. Excluding never shrinks the
@@ -42,6 +48,16 @@
             </span>
         }
     </div>
+
+    @if (Kind == CaptureKind.Concurrent)
+    {
+        @* Narrower than the 320px poster, so each of the two simultaneous captures can be told apart
+           by the width of the image it returned. *@
+        <div @ref="_narrowPoster" class="poster poster-narrow" data-testid="@($"{TestId}-narrow-poster")">
+            <p class="poster-title">Narrow poster</p>
+            <p class="poster-headline">80 kg x 8</p>
+        </div>
+    }
 
     <div class="demo-actions">
         <button data-testid="@($"{TestId}-capture")" @onclick="Capture">Capture</button>
@@ -87,6 +103,10 @@
     [Parameter]
     public bool ShowFetchedImage { get; set; }
 
+    /// <summary>Adds an image whose request the browser test holds open, so only the capture timeout can end the capture.</summary>
+    [Parameter]
+    public bool ShowHangingImage { get; set; }
+
     /// <summary>
     /// Calls <c>GetFontEmbedCssAsync</c> before the capture and reports the resulting CSS length in
     /// the panel. An empty string is the correct answer for this demo (it uses no web fonts) - the
@@ -98,6 +118,7 @@
     private int? _fontCssLength;
 
     private ElementReference _poster;
+    private ElementReference _narrowPoster;
     private ElementReference _canvasHost;
     private string _previewDataUrl = string.Empty;
     private string _stateJson = "{}";
@@ -185,6 +206,29 @@
 
 
 
+                case CaptureKind.Concurrent:
+                    // Imports the interop module first. On a cold service the module lock queues the
+                    // second capture behind the first one's import, so the two would never actually
+                    // overlap in the browser.
+                    await _htmlToImage.GetFontEmbedCssAsync(_narrowPoster, Options);
+                    // Both captures run on the one shared service at the same time; neither may pick up
+                    // the other's element, options or result.
+                    var posterCapture = _htmlToImage.ToPngBytesAsync(_poster, Options);
+                    var narrowPosterCapture = _htmlToImage.ToPngBytesAsync(_narrowPoster, Options);
+                    var capturedPngs = await Task.WhenAll(posterCapture, narrowPosterCapture);
+                    var posterSize = ImageHeader.ReadPngSize(capturedPngs.First());
+                    var narrowPosterSize = ImageHeader.ReadPngSize(capturedPngs.Last());
+                    _previewDataUrl = string.Empty;
+                    _stateJson = Serialize(new Dictionary<string, object?>
+                    {
+                        ["hasCaptured"] = true,
+                        ["format"] = "concurrent",
+                        ["posterWidth"] = posterSize?.Width,
+                        ["narrowPosterWidth"] = narrowPosterSize?.Width,
+                        ["error"] = null,
+                    });
+                    break;
+
                 case CaptureKind.PixelData:
                     // A PNG of the same element with the same options is the reference: its IHDR
                     // size is the canvas the pixel data has to cover, independent of the CSS size.
@@ -260,6 +304,8 @@
         Svg,
         PixelData,
         /// <summary>Returns the live HTMLCanvasElement rather than an encoded image.</summary>
-        Canvas
+        Canvas,
+        /// <summary>Two PNG captures of two different elements, started together on the same service.</summary>
+        Concurrent
     }
 }

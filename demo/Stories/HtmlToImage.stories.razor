@@ -178,6 +178,36 @@
         </Template>
     </Story>
 
+    <Story Name="Capture timeout">
+        <Description>
+            <code>CaptureTimeoutMs</code> bounds every capture attempt. html-to-image has captures that
+            never settle on their own - an image request that never answers, or Safari rejecting
+            <code>decode()</code> under memory pressure - and the bound turns those into an error
+            the caller can see instead of a Task that never completes.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="timeout"
+                               Kind="CapturePlayground.CaptureKind.Png"
+                               Options="_timeoutOptions"
+                               ShowHangingImage="true"
+                               Hint="CaptureTimeoutMs (here 1500 ms) bounds each capture attempt. The browser test holds the poster's image request open, so the capture can only end through the timeout - the panel then reports its error instead of hanging." />
+        </Template>
+    </Story>
+
+    <Story Name="Concurrent captures">
+        <Description>
+            One scoped service serves every component in the scope, so captures can overlap. Each call
+            carries its own element and options through the interop; two captures started together
+            each return their own element.
+        </Description>
+        <Template>
+            <CapturePlayground TestId="concurrent"
+                               Kind="CapturePlayground.CaptureKind.Concurrent"
+                               Options="_concurrentOptions"
+                               Hint="Captures the 320px poster and the 200px poster at the same time on the same service. The panel reports each PNG's width from its own IHDR header - each capture must come back with its own element." />
+        </Template>
+    </Story>
+
     <Story Name="Fetch request init">
         <Description>
             <code>FetchRequestInit</code> applies request options to every resource html-to-image
@@ -200,6 +230,18 @@
     private readonly HtmlToImageOptions _pixelRatioOptions = new()
     {
         PixelRatio = 3,
+    };
+
+    private readonly HtmlToImageOptions _timeoutOptions = new()
+    {
+        CaptureTimeoutMs = 1500,
+        StabilizeAttempts = 1,
+        PixelRatio = 1,
+    };
+
+    private readonly HtmlToImageOptions _concurrentOptions = new()
+    {
+        PixelRatio = 1,
     };
 
     private readonly HtmlToImageOptions _pixelDataOptions = new()
