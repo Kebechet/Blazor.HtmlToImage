@@ -149,6 +149,17 @@ public sealed class HtmlToImageOptions
     /// </remarks>
     [JsonPropertyName("captureTimeoutMs")]
     public int? CaptureTimeoutMs { get; set; }
+
+    /// <summary>
+    /// Largest result, in bytes, a capture may transfer back to .NET. Defaults to 32 MB. A larger
+    /// result fails the capture instead of exhausting memory; raise it for very large captures at a
+    /// high <see cref="PixelRatio"/>, whose size grows with the square of the ratio.
+    /// </summary>
+    /// <remarks>
+    /// Enforced while .NET reads the result stream, so it never reaches the browser.
+    /// </remarks>
+    [JsonIgnore]
+    public long? MaxResultBytes { get; set; }
 }
 
 /// <summary>

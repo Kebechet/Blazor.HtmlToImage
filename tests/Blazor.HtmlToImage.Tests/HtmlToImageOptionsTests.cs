@@ -88,6 +88,20 @@ public class HtmlToImageOptionsTests
     }
 
     [Fact]
+    public void Serialize_MaxResultBytes_StaysOnTheDotNetSide()
+    {
+        // Arrange
+        var options = new HtmlToImageOptions { MaxResultBytes = 64L * 1024 * 1024 };
+
+        // Act
+        var json = JsonSerializer.Serialize(options);
+
+        // Assert
+        // The limit is enforced when .NET reads the result stream; the browser has no use for it.
+        json.ShouldNotContain("maxResultBytes", Case.Insensitive);
+    }
+
+    [Fact]
     public void Serialize_ExcludeMembers_AreCarriedForTheInteropFilter()
     {
         // Arrange

@@ -9,11 +9,12 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
     private const string _modulePath = "./_content/Kebechet.Blazor.HtmlToImage/html-to-image-interop.js";
 
     /// <summary>
-    /// Ceiling for a single streamed capture. A capture at a high <c>PixelRatio</c> grows with the
-    /// square of the ratio, so the default 32 MB budget is generous for a full-page poster while
-    /// still failing loudly instead of exhausting memory on a phone.
+    /// Ceiling for a single streamed capture when <see cref="HtmlToImageOptions.MaxResultBytes"/> is
+    /// unset. A capture at a high <c>PixelRatio</c> grows with the square of the ratio, so 32 MB is
+    /// generous for a full-page poster while still failing loudly instead of exhausting memory on a
+    /// phone.
     /// </summary>
-    private const long _maxStreamBytes = 32L * 1024 * 1024;
+    private const long _defaultMaxResultBytes = 32L * 1024 * 1024;
 
     private readonly IJSRuntime _jsRuntime;
     private readonly SemaphoreSlim _moduleLock = new(1, 1);
@@ -178,7 +179,8 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
         await using var streamReference = await module.InvokeAsync<IJSStreamReference>(
             "toStream", cancellationToken, new object?[] { target, format.ToJsName(), options, ErrorListener });
 
-        await using var stream = await streamReference.OpenReadStreamAsync(_maxStreamBytes, cancellationToken);
+        var maxResultBytes = options?.MaxResultBytes ?? _defaultMaxResultBytes;
+        await using var stream = await streamReference.OpenReadStreamAsync(maxResultBytes, cancellationToken);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer, cancellationToken);
         return buffer.ToArray();

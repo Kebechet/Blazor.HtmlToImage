@@ -70,6 +70,37 @@ public class HtmlToImageServiceTests
         await module.Received(1).DisposeAsync();
     }
 
+    [Fact]
+    public async Task ToPngBytesAsync_MaxResultBytesSet_CapsTheStreamAtThatSize()
+    {
+        // Arrange
+        const long maxResultBytes = 64L * 1024 * 1024;
+        var streamReference = StubCapturedStream();
+        var htmlToImageService = new HtmlToImageService(_jsRuntime);
+        var options = new HtmlToImageOptions { MaxResultBytes = maxResultBytes };
+
+        // Act
+        await htmlToImageService.ToPngBytesAsync("poster", options);
+
+        // Assert
+        await streamReference.Received(1).OpenReadStreamAsync(maxResultBytes, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ToPngBytesAsync_MaxResultBytesUnset_CapsTheStreamAt32Megabytes()
+    {
+        // Arrange
+        const long defaultMaxResultBytes = 32L * 1024 * 1024;
+        var streamReference = StubCapturedStream();
+        var htmlToImageService = new HtmlToImageService(_jsRuntime);
+
+        // Act
+        await htmlToImageService.ToPngBytesAsync("poster");
+
+        // Assert
+        await streamReference.Received(1).OpenReadStreamAsync(defaultMaxResultBytes, Arg.Any<CancellationToken>());
+    }
+
     public static TheoryData<string, bool> Captures()
     {
         var captures = new TheoryData<string, bool>();
@@ -161,6 +192,22 @@ public class HtmlToImageServiceTests
         var pending = new TaskCompletionSource<TValue>();
         cancellationToken.Register(() => pending.TrySetCanceled(cancellationToken));
         return pending.Task;
+    }
+
+    /// <summary>
+    /// Imports a module whose byte capture returns a stream reference over three bytes, and returns
+    /// that reference so the test can inspect how it was read.
+    /// </summary>
+    private IJSStreamReference StubCapturedStream()
+    {
+        var module = Substitute.For<IJSObjectReference>();
+        StubImport(new ValueTask<IJSObjectReference>(module));
+        var streamReference = Substitute.For<IJSStreamReference>();
+        streamReference.OpenReadStreamAsync(Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<Stream>(new MemoryStream([1, 2, 3])));
+        module.InvokeAsync<IJSStreamReference>(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<object?[]?>())
+            .Returns(new ValueTask<IJSStreamReference>(streamReference));
+        return streamReference;
     }
 
     private void StubImport(ValueTask<IJSObjectReference> import)
