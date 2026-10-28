@@ -24,12 +24,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # chrome: the runner's preinstalled Chrome. webkit: Playwright's WebKit build - the engine of
+        # every iOS browser and every MAUI app on iOS.
+        browser: [ chrome, webkit ]
         # project: the demo and test hosts reference the library project, so every edit is tested.
         # package: they reference the packed .nupkg instead - the artifact consumers install. A
         # package that differs from its source, as 1.11.13.1 did, only fails here.
         reference: [ project, package ]
 
-    name: capture-tests (${{ matrix.reference }})
+    name: capture-tests (${{ matrix.browser }}, ${{ matrix.reference }})
 
     steps:
     - uses: actions/checkout@v7
@@ -51,7 +54,16 @@ jobs:
         echo "HTMLTOIMAGE_PACKAGE_VERSION=$(grep -oP '(?<=<Version>)[^<]+' ${{ env.LIBRARY_PROJECT }})" >> "$GITHUB_ENV"
         echo "HTMLTOIMAGE_PACKAGE_SOURCE=${{ github.workspace }}/e2e-feed" >> "$GITHUB_ENV"
 
-    # The fixture launches the runner's preinstalled Chrome via Playwright's `chrome` channel,
-    # so there is no browser download step.
-    - name: Run real Chrome capture tests
-      run: dotnet test ${{ env.E2E_PROJECT }} --no-restore --configuration ${{ env.BUILD_CONFIGURATION }}
+    - name: Build e2e suite
+      run: dotnet build ${{ env.E2E_PROJECT }} --no-restore --configuration ${{ env.BUILD_CONFIGURATION }}
+
+    # Chrome needs no download: the fixture launches the runner's preinstalled one through
+    # Playwright's `chrome` channel. WebKit is Playwright's own build, pinned to the package version.
+    - name: Install Playwright WebKit
+      if: matrix.browser == 'webkit'
+      run: pwsh tests/Blazor.HtmlToImage.E2E/bin/${{ env.BUILD_CONFIGURATION }}/net10.0/playwright.ps1 install --with-deps webkit
+
+    - name: Run real ${{ matrix.browser }} capture tests
+      env:
+        E2E_BROWSER: ${{ matrix.browser }}
+      run: dotnet test ${{ env.E2E_PROJECT }} --no-build --configuration ${{ env.BUILD_CONFIGURATION }}

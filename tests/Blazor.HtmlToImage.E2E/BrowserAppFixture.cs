@@ -73,14 +73,7 @@ public abstract class BrowserAppFixture : IAsyncLifetime
         await WaitForAppAsync(TimeSpan.FromMinutes(5));
 
         _playwright = await Playwright.CreateAsync();
-        Browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            // The system Chrome rather than Playwright's bundled Chromium, so neither CI nor a
-            // fresh clone needs a browser download step.
-            Channel = "chrome",
-            Headless = true,
-            Args = ["--disable-dev-shm-usage"]
-        });
+        Browser = await LaunchBrowserAsync(_playwright);
 
         Page = await Browser.NewPageAsync(new BrowserNewPageOptions
         {
@@ -98,6 +91,36 @@ public abstract class BrowserAppFixture : IAsyncLifetime
         {
             lock (_jsErrors) _jsErrors.Add(FirstLine(error));
         };
+    }
+
+    /// <summary>
+    /// Chrome by default; WebKit when <c>E2E_BROWSER</c> is <c>webkit</c>. WebKit is the engine behind
+    /// every iOS browser and every MAUI app on iOS, and the one the stabilisation loop and capture
+    /// timeout exist for.
+    /// </summary>
+    private static async Task<IBrowser> LaunchBrowserAsync(IPlaywright playwright)
+    {
+        var browserName = Environment.GetEnvironmentVariable("E2E_BROWSER");
+        if (string.IsNullOrEmpty(browserName) || browserName == "chrome")
+        {
+            return await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                // The system Chrome rather than Playwright's bundled Chromium, so neither CI nor a
+                // fresh clone needs a browser download step.
+                Channel = "chrome",
+                Headless = true,
+                Args = ["--disable-dev-shm-usage"]
+            });
+        }
+
+        if (browserName == "webkit")
+        {
+            // Playwright's own WebKit build - install it once with `playwright.ps1 install webkit`
+            // from the test project's build output.
+            return await playwright.Webkit.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        }
+
+        throw new InvalidOperationException($"E2E_BROWSER must be chrome or webkit, not \"{browserName}\".");
     }
 
     /// <summary>
