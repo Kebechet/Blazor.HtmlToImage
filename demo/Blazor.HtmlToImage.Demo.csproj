@@ -15,8 +15,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.5" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\src\Blazor.HtmlToImage\Blazor.HtmlToImage.csproj" />
-  </ItemGroup>
+  <Import Project="..\build\HtmlToImageReference.props" />
 
 </Project>

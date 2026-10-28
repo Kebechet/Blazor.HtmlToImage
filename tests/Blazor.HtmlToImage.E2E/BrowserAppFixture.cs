@@ -57,6 +57,7 @@ public abstract class BrowserAppFixture : IAsyncLifetime
         startInfo.ArgumentList.Add("--no-launch-profile");
         startInfo.ArgumentList.Add("--urls");
         startInfo.ArgumentList.Add(BaseUrl);
+        AddPackageUnderTest(startInfo);
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
 
         _appProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -97,6 +98,38 @@ public abstract class BrowserAppFixture : IAsyncLifetime
         {
             lock (_jsErrors) _jsErrors.Add(FirstLine(error));
         };
+    }
+
+    /// <summary>
+    /// Points the app at a packed .nupkg instead of the library project when
+    /// <c>HTMLTOIMAGE_PACKAGE_VERSION</c> and <c>HTMLTOIMAGE_PACKAGE_SOURCE</c> (the folder holding
+    /// it) are set - see <c>build/HtmlToImageReference.props</c>.
+    /// </summary>
+    /// <remarks>
+    /// Restore and build output go under the package folder, away from the usual ones. A package
+    /// version already in the global packages folder would otherwise be used instead of the new
+    /// .nupkg with the same version, and the project-reference build output would be reused as-is.
+    /// </remarks>
+    private void AddPackageUnderTest(ProcessStartInfo startInfo)
+    {
+        var packageVersion = Environment.GetEnvironmentVariable("HTMLTOIMAGE_PACKAGE_VERSION");
+        if (string.IsNullOrEmpty(packageVersion))
+        {
+            return;
+        }
+
+        var packageSource = Environment.GetEnvironmentVariable("HTMLTOIMAGE_PACKAGE_SOURCE");
+        if (string.IsNullOrEmpty(packageSource))
+        {
+            throw new InvalidOperationException("HTMLTOIMAGE_PACKAGE_VERSION is set but HTMLTOIMAGE_PACKAGE_SOURCE, the folder holding the .nupkg, is not.");
+        }
+
+        var packageSourcePath = Path.GetFullPath(packageSource);
+        startInfo.ArgumentList.Add($"-p:HtmlToImagePackageVersion={packageVersion}");
+        startInfo.ArgumentList.Add($"-p:RestoreAdditionalProjectSources={packageSourcePath}");
+        startInfo.ArgumentList.Add($"-p:RestorePackagesPath={Path.Combine(packageSourcePath, ".packages")}");
+        startInfo.ArgumentList.Add("--artifacts-path");
+        startInfo.ArgumentList.Add(Path.Combine(packageSourcePath, ".artifacts", Path.GetFileNameWithoutExtension(ProjectPath)));
     }
 
     /// <summary>Forgets the errors of earlier pages; call on every navigation.</summary>

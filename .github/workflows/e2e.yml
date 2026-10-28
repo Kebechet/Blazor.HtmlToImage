@@ -14,11 +14,22 @@ env:
   DOTNET_VERSION: '10.0.x'
   BUILD_CONFIGURATION: Release
   E2E_PROJECT: tests/Blazor.HtmlToImage.E2E/Blazor.HtmlToImage.E2E.csproj
+  LIBRARY_PROJECT: src/Blazor.HtmlToImage/Blazor.HtmlToImage.csproj
 
 jobs:
   capture-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # project: the demo and test hosts reference the library project, so every edit is tested.
+        # package: they reference the packed .nupkg instead - the artifact consumers install. A
+        # package that differs from its source, as 1.11.13.1 did, only fails here.
+        reference: [ project, package ]
+
+    name: capture-tests (${{ matrix.reference }})
 
     steps:
     - uses: actions/checkout@v7
@@ -32,6 +43,13 @@ jobs:
       run: |
         dotnet restore ${{ env.E2E_PROJECT }}
         dotnet restore demo/Blazor.HtmlToImage.Demo.csproj
+
+    - name: Pack the library into a local feed
+      if: matrix.reference == 'package'
+      run: |
+        dotnet build ${{ env.LIBRARY_PROJECT }} --configuration ${{ env.BUILD_CONFIGURATION }} -p:PackageOutputPath=${{ github.workspace }}/e2e-feed
+        echo "HTMLTOIMAGE_PACKAGE_VERSION=$(grep -oP '(?<=<Version>)[^<]+' ${{ env.LIBRARY_PROJECT }})" >> "$GITHUB_ENV"
+        echo "HTMLTOIMAGE_PACKAGE_SOURCE=${{ github.workspace }}/e2e-feed" >> "$GITHUB_ENV"
 
     # The fixture launches the runner's preinstalled Chrome via Playwright's `chrome` channel,
     # so there is no browser download step.

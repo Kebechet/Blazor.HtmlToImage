@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    How the demo and the test hosts reference the library. By default the project, so every edit is
+    picked up at once. With HtmlToImagePackageVersion set, the packed .nupkg instead - the artifact
+    consumers install. That is what catches a package that differs from its source, as 1.11.13.1 did:
+    its asset manifest described an older interop module, which the browser then refused to load.
+  -->
+  <ItemGroup Condition="'$(HtmlToImagePackageVersion)' == ''">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\src\Blazor.HtmlToImage\Blazor.HtmlToImage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HtmlToImagePackageVersion)' != ''">
+    <PackageReference Include="Kebechet.Blazor.HtmlToImage" Version="$(HtmlToImagePackageVersion)" />
+  </ItemGroup>
+
+</Project>

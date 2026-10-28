@@ -65,6 +65,18 @@ jobs:
           echo "$CONTENTS" | grep -q "lib.module.js"                           || { echo "::error::JS initializer missing from package"; exit 1; }
           echo "$CONTENTS" | grep -q "build/Kebechet.Blazor.HtmlToImage.props"  || { echo "::error::build props missing from package"; exit 1; }
 
+      # File names say nothing about whether the package works: 1.11.13.1 had every file and an asset
+      # manifest that made the browser refuse the interop module. Capture with the exact .nupkg about
+      # to be pushed, in a real browser, before anything leaves this job.
+      - name: Run the browser suite against this exact package
+        env:
+          HTMLTOIMAGE_PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          HTMLTOIMAGE_PACKAGE_SOURCE: ${{ github.workspace }}/e2e-feed
+        run: |
+          mkdir -p "$HTMLTOIMAGE_PACKAGE_SOURCE"
+          cp ${{ env.OUTPUT_PATH }}/*.nupkg "$HTMLTOIMAGE_PACKAGE_SOURCE"/
+          dotnet test tests/Blazor.HtmlToImage.E2E/Blazor.HtmlToImage.E2E.csproj --configuration ${{ env.BUILD_CONFIGURATION }}
+
       - name: Publish to NuGet
         run: dotnet nuget push ${{ env.OUTPUT_PATH }}/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source ${{ env.NUGET_SOURCE }} --skip-duplicate
 
