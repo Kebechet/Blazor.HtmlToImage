@@ -130,7 +130,7 @@ public sealed class CaptureTests
     }
 
     [Fact]
-    public async Task Capture_PixelDataStory_ReturnsFourBytesPerPixel()
+    public async Task Capture_PixelDataAtPixelRatioTwo_CoversTheWholeCanvas()
     {
         // Arrange
         var canvas = await _fixture.NavigateToStoryAsync("capture-htmltoimage--pixel-data");
@@ -139,11 +139,15 @@ public sealed class CaptureTests
         var state = await _fixture.CaptureAsync(canvas, "pixel-data");
 
         // Assert
-        // Raw RGBA, so the length must be divisible by 4. A base64 round-trip that lost or padded
-        // bytes would not survive this.
-        var byteLength = StoryState.Int(state, "byteLength");
-        Assert.True(byteLength > 0, $"Expected pixel data. State: {state}");
-        Assert.True(byteLength % 4 == 0, $"Expected RGBA data divisible by 4, got {byteLength}. State: {state}");
+        // The story captures at PixelRatio 2, so the canvas is twice the element's CSS size. Upstream
+        // reads only the CSS-sized top-left corner of it, a quarter of the pixels; the reference PNG's
+        // IHDR size is the whole canvas, which is what the pixel data has to cover.
+        var referenceWidth = StoryState.Int(state, "referenceWidth");
+        var referenceHeight = StoryState.Int(state, "referenceHeight");
+        Assert.True(referenceWidth > 0 && referenceHeight > 0, $"Expected a reference size. State: {state}");
+        Assert.Equal(referenceWidth * referenceHeight * 4, StoryState.Int(state, "byteLength"));
+        Assert.Equal(referenceWidth, StoryState.Int(state, "width"));
+        Assert.Equal(referenceHeight, StoryState.Int(state, "height"));
         _fixture.AssertNoJsErrors();
     }
 

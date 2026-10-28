@@ -186,9 +186,22 @@
 
 
                 case CaptureKind.PixelData:
-                    var pixels = await _htmlToImage.ToPixelDataAsync(_poster, Options);
+                    // A PNG of the same element with the same options is the reference: its IHDR
+                    // size is the canvas the pixel data has to cover, independent of the CSS size.
+                    var referencePng = ImageHeader.ReadPngSize(await _htmlToImage.ToPngBytesAsync(_poster, Options));
+                    var pixelData = await _htmlToImage.ToPixelDataAsync(_poster, Options);
                     _previewDataUrl = string.Empty;
-                    WriteState(pixels, "pixelData");
+                    _stateJson = Serialize(new Dictionary<string, object?>
+                    {
+                        ["hasCaptured"] = true,
+                        ["format"] = "pixelData",
+                        ["byteLength"] = pixelData.Bytes.Length,
+                        ["width"] = pixelData.Width,
+                        ["height"] = pixelData.Height,
+                        ["referenceWidth"] = referencePng?.Width,
+                        ["referenceHeight"] = referencePng?.Height,
+                        ["error"] = null,
+                    });
                     break;
             }
         }

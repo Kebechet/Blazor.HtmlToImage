@@ -59,12 +59,18 @@ public interface IHtmlToImageService
     Task<byte[]> ToJpegBytesAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the element's raw RGBA pixel data, four bytes per pixel in row-major order.
+    /// Returns the element's raw RGBA pixels with the canvas dimensions they cover - the element's
+    /// size times the pixel ratio.
     /// </summary>
-    Task<byte[]> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// Does not call upstream's <c>toPixelData</c>, which reads the element's CSS size from a canvas
+    /// that is pixel-ratio times larger and so returns only its top-left corner on any high-density
+    /// screen.
+    /// </remarks>
+    Task<PixelData> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <inheritdoc cref="ToPixelDataAsync(ElementReference, HtmlToImageOptions?, CancellationToken)"/>
-    Task<byte[]> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
+    Task<PixelData> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Resolves the element's web fonts to embeddable CSS. Compute this once and pass it back via

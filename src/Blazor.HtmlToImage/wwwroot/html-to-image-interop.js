@@ -208,6 +208,16 @@ export async function toDataUrl(target, format, options, errorListener) {
 }
 
 /**
+ * Width and height as little-endian uint32 in front of the RGBA bytes - a wire contract with
+ * PixelData.FromInteropBytes on the .NET side.
+ */
+const PIXEL_DATA_HEADER_BYTES = 8;
+
+function readPixels(canvas) {
+	return canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+}
+
+/**
  * Full FNV-1a over the pixel buffer. Sampling would be faster but a hash over every byte cannot
  * miss a region-sized difference, and 13 MB of pixels hashes in tens of milliseconds.
  */
@@ -234,8 +244,17 @@ export async function toStream(target, format, options, errorListener) {
 	const settings = captureSettings(options);
 
 	if (format === 'pixelData') {
-		const pixels = await captureStable(() => library.toPixelData(node, resolvedOptions), pixelDigest, settings, 'toPixelData');
-		return pixels.buffer ?? pixels;
+		// Deliberately NOT library.toPixelData: it reads getImageData at the element's CSS size from a
+		// canvas pixel-ratio times larger, so on any high-density screen it returns only the top-left
+		// corner - and no dimensions to interpret the bytes with.
+		const canvas = await captureStable(() => library.toCanvas(node, resolvedOptions), c => pixelDigest(readPixels(c)), settings, 'toPixelData');
+		const pixels = readPixels(canvas);
+		const result = new Uint8Array(PIXEL_DATA_HEADER_BYTES + pixels.length);
+		const header = new DataView(result.buffer);
+		header.setUint32(0, canvas.width, true);
+		header.setUint32(4, canvas.height, true);
+		result.set(pixels, PIXEL_DATA_HEADER_BYTES);
+		return result.buffer;
 	}
 
 	// Deliberately NOT library.toBlob. Upstream's toBlob forwards the options to toCanvas but then

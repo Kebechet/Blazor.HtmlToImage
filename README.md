@@ -133,7 +133,7 @@ release contains 589, the timeout stays as a plain safety bound; once it contain
 | Entry points | 7 | 7 |
 | Options | 20 | 19 |
 
-**Entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS` and `toCanvas` map to `ToPngAsync`, `ToJpegAsync`, `ToSvgAsync`, `ToPixelDataAsync`, `GetFontEmbedCssAsync` and `ToCanvasAsync`. `toBlob`'s role is served by `ToPngBytesAsync` / `ToJpegBytesAsync`, which route through `toCanvas` to work around an upstream bug - see the deviation note below.
+**Entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS` and `toCanvas` map to `ToPngAsync`, `ToJpegAsync`, `ToSvgAsync`, `ToPixelDataAsync`, `GetFontEmbedCssAsync` and `ToCanvasAsync`. `toBlob`'s role is served by `ToPngBytesAsync` / `ToJpegBytesAsync`, which route through `toCanvas` to work around an upstream bug, and `ToPixelDataAsync` routes through `toCanvas` too - see the deviation notes below.
 
 **Options:** 19 of 20. `type` is left out because only upstream's `toBlob` reads it, and this wrapper never calls `toBlob` (see the deviation below) - the method you call decides the format. `Serialize_EveryMember_IsReadByTheInteropOrByUpstream` keeps an option that nothing reads from coming back.
 
@@ -149,7 +149,11 @@ Three options are reshaped because their upstream form is a JavaScript value tha
 
 Coverage is measured against html-to-image's published type definitions - `lib/index.d.ts` for entry points, `lib/types.d.ts` for the `Options` interface - excluding underscore-prefixed internals. Re-checked on every upstream version bump.
 
-### One deliberate deviation from upstream
+### Two deliberate deviations from upstream
+
+⚠️ **`ToPixelDataAsync` does not call upstream's `toPixelData`, and returns `PixelData` rather than bare bytes.**
+
+Upstream's `toPixelData` reads `getImageData` at the element's CSS size from a canvas that is `pixelRatio` times larger, so on any high-density screen - or with `PixelRatio` or `CanvasWidth` set - it returns only the top-left corner, with no width to tell the rows apart. This wrapper reads the whole canvas and returns its `Width`, `Height` and `Bytes` (`Width * Height * 4`, RGBA, row by row). Pinned by `Capture_PixelDataAtPixelRatioTwo_CoversTheWholeCanvas`.
 
 ⚠️ **`ToJpegBytesAsync` does not call upstream's `toBlob`.**
 

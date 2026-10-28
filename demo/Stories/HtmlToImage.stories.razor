@@ -93,7 +93,8 @@
         <Template>
             <CapturePlayground TestId="pixel-data"
                                Kind="CapturePlayground.CaptureKind.PixelData"
-                               Hint="ToPixelDataAsync returns raw RGBA bytes, four per pixel in row-major order - for analysis rather than display, so there is no preview. Byte length equals width times height times 4." />
+                               Options="_pixelDataOptions"
+                               Hint="ToPixelDataAsync returns raw RGBA bytes, four per pixel in row-major order - for analysis rather than display, so there is no preview. At PixelRatio 2 the pixels cover the whole 2x canvas, so the byte length equals the reference PNG's width times height times 4." />
         </Template>
     </Story>
 
@@ -199,6 +200,11 @@
     private readonly HtmlToImageOptions _pixelRatioOptions = new()
     {
         PixelRatio = 3,
+    };
+
+    private readonly HtmlToImageOptions _pixelDataOptions = new()
+    {
+        PixelRatio = 2,
     };
 
     private readonly HtmlToImageOptions _excludeOptions = new()

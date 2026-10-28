@@ -138,15 +138,21 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<PixelData> ToPixelDataAsync(ElementReference element, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(element, CaptureFormat.PixelData, options, cancellationToken);
+        return CapturePixelData(element, options, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<byte[]> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<PixelData> ToPixelDataAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CaptureBytes(elementId, CaptureFormat.PixelData, options, cancellationToken);
+        return CapturePixelData(elementId, options, cancellationToken);
+    }
+
+    private async Task<PixelData> CapturePixelData(object target, HtmlToImageOptions? options, CancellationToken cancellationToken)
+    {
+        var interopBytes = await CaptureBytes(target, CaptureFormat.PixelData, options, cancellationToken);
+        return PixelData.FromInteropBytes(interopBytes);
     }
 
     /// <inheritdoc />
