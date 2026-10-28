@@ -126,16 +126,18 @@ release contains 589, the timeout stays as a plain safety bound; once it contain
 
 ## Coverage vs. html-to-image 1.11.13
 
-**Complete.** Every upstream entry point and every option is reachable.
+**Complete.** Every upstream entry point is reachable, and so is every option those entry points read.
 
 | Axis | html-to-image | This package |
 |---|---:|---:|
 | Entry points | 7 | 7 |
-| Options | 20 | 20 |
+| Options | 20 | 19 |
 
 **Entry points:** `toPng`, `toJpeg`, `toSvg`, `toPixelData`, `getFontEmbedCSS` and `toCanvas` map to `ToPngAsync`, `ToJpegAsync`, `ToSvgAsync`, `ToPixelDataAsync`, `GetFontEmbedCssAsync` and `ToCanvasAsync`. `toBlob`'s role is served by `ToPngBytesAsync` / `ToJpegBytesAsync`, which route through `toCanvas` to work around an upstream bug - see the deviation note below.
 
-**Options:** all 20, though three are reshaped because their upstream form is a JavaScript value that cannot cross interop as data:
+**Options:** 19 of 20. `type` is left out because only upstream's `toBlob` reads it, and this wrapper never calls `toBlob` (see the deviation below) - the method you call decides the format. `Serialize_EveryMember_IsReadByTheInteropOrByUpstream` keeps an option that nothing reads from coming back.
+
+Three options are reshaped because their upstream form is a JavaScript value that cannot cross interop as data:
 
 | Upstream | Here | Why |
 |---|---|---|

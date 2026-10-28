@@ -118,8 +118,8 @@ public sealed class OptionCoverageTests
         var state = await _fixture.CaptureAsync(canvas, "fonts");
 
         // Assert
-        // SkipFonts, PreferredFontFormat, CacheBust, IncludeQueryParams, SkipAutoScale and Type all
-        // travel together here; any one of them arriving malformed aborts the capture.
+        // SkipFonts, PreferredFontFormat, CacheBust, IncludeQueryParams and SkipAutoScale all travel
+        // together here; any one of them arriving malformed aborts the capture.
         Assert.True(StoryState.Bool(state, "isPng"), $"Expected a PNG. State: {state}");
         // The story calls GetFontEmbedCssAsync before capturing and reports the CSS length. Zero is
         // the CORRECT value for a page with no web fonts - the assertion is that the call

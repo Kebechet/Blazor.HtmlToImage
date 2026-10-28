@@ -108,8 +108,8 @@ public sealed class CaptureTests
         var state = await _fixture.CaptureAsync(canvas, "jpeg");
 
         // Assert
-        // toBlob honours the `type` option rather than switching entry point, so this also pins that
-        // the interop pushes the format into the options for the byte path.
+        // The byte path takes the MIME type from the method called, not from an option, and encodes
+        // the canvas itself instead of calling upstream's toBlob - this pins that it really is JPEG.
         Assert.True(StoryState.Bool(state, "isJpeg"), $"Expected JPEG magic bytes. State: {state}");
         Assert.False(StoryState.Bool(state, "isPng"), $"Expected NOT a PNG. State: {state}");
         _fixture.AssertNoJsErrors();

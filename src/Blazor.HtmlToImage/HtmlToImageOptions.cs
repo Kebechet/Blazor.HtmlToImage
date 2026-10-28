@@ -12,6 +12,10 @@ namespace Kebechet.Blazor.HtmlToImage;
 /// without a round-trip per DOM node. It is modelled instead as <see cref="ExcludeCssClasses"/>
 /// and <see cref="ExcludeSelector"/>, which the interop layer compiles into a single filter
 /// function. <c>fetchRequestInit</c> and <c>onImageErrorHandler</c> are not modelled.
+/// <para>
+/// Upstream's <c>type</c> is not modelled either: only its <c>toBlob</c> reads it, and this wrapper
+/// never calls <c>toBlob</c>. The method you call decides the output format.
+/// </para>
 /// </remarks>
 public sealed class HtmlToImageOptions
 {
@@ -91,10 +95,6 @@ public sealed class HtmlToImageOptions
     /// <summary>Disables the automatic downscaling applied to very large images.</summary>
     [JsonPropertyName("skipAutoScale")]
     public bool? SkipAutoScale { get; set; }
-
-    /// <summary>MIME type of the output image. Defaults to <c>image/png</c>.</summary>
-    [JsonPropertyName("type")]
-    public string? Type { get; set; }
 
     /// <summary>
     /// Elements carrying any of these CSS classes are dropped from the capture, along with their

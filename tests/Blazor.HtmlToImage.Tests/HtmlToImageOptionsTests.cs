@@ -11,6 +11,38 @@ namespace Kebechet.Blazor.HtmlToImage.Tests;
 /// </summary>
 public class HtmlToImageOptionsTests
 {
+    /// <summary>
+    /// Every option html-to-image reads in the entry points this wrapper calls - toPng, toJpeg, toSvg,
+    /// toCanvas, toPixelData, getFontEmbedCSS - plus the members html-to-image-interop.js consumes
+    /// itself. Upstream's <c>type</c> is absent on purpose: only its <c>toBlob</c> reads it, and the
+    /// wrapper never calls <c>toBlob</c>.
+    /// </summary>
+    private static readonly string[] _consumedOptionNames =
+    [
+        "width", "height", "backgroundColor", "canvasWidth", "canvasHeight", "style",
+        "includeStyleProperties", "quality", "cacheBust", "includeQueryParams", "imagePlaceholder",
+        "pixelRatio", "skipFonts", "preferredFontFormat", "fontEmbedCSS", "skipAutoScale",
+        "fetchRequestInit", "excludeCssClasses", "excludeSelector", "stabilizeAttempts", "captureTimeoutMs",
+    ];
+
+    [Fact]
+    public void Serialize_EveryMember_IsReadByTheInteropOrByUpstream()
+    {
+        // Arrange
+        var options = new HtmlToImageOptions();
+
+        // Act
+        var json = JsonSerializer.Serialize(options);
+
+        // Assert
+        // An option nothing reads still serializes, still reaches the browser and still lets the
+        // capture succeed - it just never does anything, which no capture test can tell apart from a
+        // value that happened to match the default.
+        using var document = JsonDocument.Parse(json);
+        var serializedNames = document.RootElement.EnumerateObject().Select(x => x.Name).ToList();
+        serializedNames.ShouldBeSubsetOf(_consumedOptionNames);
+    }
+
     [Fact]
     public void Serialize_OptionsWithUpstreamNames_UsesExactUpstreamCasing()
     {
