@@ -15,8 +15,13 @@ namespace Kebechet.Blazor.HtmlToImage;
 /// base64 data URL. A poster captured at <c>PixelRatio = 3</c> is several megabytes, and a data URL
 /// carries it as a single JSON string - roughly 33% larger and fully buffered on both sides.
 /// </para>
+/// <para>
+/// Deliberately not <see cref="IAsyncDisposable"/>: the instance is scoped and shared by every
+/// component in the scope, so its lifetime belongs to the DI container, which disposes the
+/// implementation when the scope ends.
+/// </para>
 /// </remarks>
-public interface IHtmlToImageService : IAsyncDisposable
+public interface IHtmlToImageService
 {
     /// <summary>Captures the element as a PNG data URL (<c>data:image/png;base64,...</c>).</summary>
     Task<string> ToPngAsync(ElementReference element, HtmlToImageOptions? options = null);

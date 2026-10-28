@@ -4,7 +4,7 @@ using Microsoft.JSInterop;
 namespace Kebechet.Blazor.HtmlToImage;
 
 /// <inheritdoc cref="IHtmlToImageService"/>
-public sealed class HtmlToImageService : IHtmlToImageService
+public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
 {
     private const string _modulePath = "./_content/Kebechet.Blazor.HtmlToImage/html-to-image-interop.js";
 
@@ -185,8 +185,14 @@ public sealed class HtmlToImageService : IHtmlToImageService
     /// can capture concurrently on first render; without it each would issue its own dynamic
     /// import and the losers' module references would leak.
     /// </summary>
+    /// <remarks>
+    /// The scope can be torn down while the import is still in flight. The disposal check after the
+    /// import is what keeps that late module from outliving the service: <see cref="DisposeAsync"/>
+    /// already ran and saw no module to dispose.
+    /// </remarks>
     private async Task<IJSObjectReference> GetModule()
     {
+        ThrowIfDisposed();
         if (_module is not null)
         {
             return _module;
@@ -195,7 +201,19 @@ public sealed class HtmlToImageService : IHtmlToImageService
         await _moduleLock.WaitAsync();
         try
         {
-            _module ??= await _jsRuntime.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            if (_module is not null)
+            {
+                return _module;
+            }
+
+            var module = await _jsRuntime.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            if (_isDisposed)
+            {
+                await DisposeModule(module);
+                ThrowIfDisposed();
+            }
+
+            _module = module;
             return _module;
         }
         finally
@@ -204,7 +222,35 @@ public sealed class HtmlToImageService : IHtmlToImageService
         }
     }
 
-    /// <inheritdoc />
+    private void ThrowIfDisposed()
+    {
+        if (_isDisposed)
+        {
+            throw new ObjectDisposedException(nameof(HtmlToImageService));
+        }
+    }
+
+    private static async Task DisposeModule(IJSObjectReference module)
+    {
+        try
+        {
+            await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit or WebView already torn down - the JS side is gone with it.
+        }
+    }
+
+    /// <summary>
+    /// Releases the interop module and the callback reference. The DI container calls this when the
+    /// scope ends.
+    /// </summary>
+    /// <remarks>
+    /// The module lock is deliberately not disposed: a capture still waiting on the import holds it,
+    /// and disposing it under that capture would make its release throw instead of letting it report
+    /// the service as disposed.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         if (_isDisposed)
@@ -216,20 +262,11 @@ public sealed class HtmlToImageService : IHtmlToImageService
 
         if (_module is not null)
         {
-            try
-            {
-                await _module.DisposeAsync();
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit or WebView already torn down - the JS side is gone with it.
-            }
-
+            await DisposeModule(_module);
             _module = null;
         }
 
         _selfRef?.Dispose();
         _selfRef = null;
-        _moduleLock.Dispose();
     }
 }
