@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
@@ -169,21 +170,46 @@ public sealed class HtmlToImageService : IHtmlToImageService, IAsyncDisposable
 
     private async Task<string> GetFontEmbedCss(object target, HtmlToImageOptions? options, CancellationToken cancellationToken)
     {
-        var module = await GetModule(cancellationToken);
-        return await module.InvokeAsync<string>("getFontEmbedCss", cancellationToken, new object?[] { target, options, ErrorListener });
+        var fontCssBytes = await InvokeStream("getFontEmbedCss", options, cancellationToken, target, options, ErrorListener);
+        return DecodeText(fontCssBytes);
     }
 
     private async Task<string> CaptureDataUrl(object target, CaptureFormat format, HtmlToImageOptions? options, CancellationToken cancellationToken)
     {
-        var module = await GetModule(cancellationToken);
-        return await module.InvokeAsync<string>("toDataUrl", cancellationToken, new object?[] { target, format.ToJsName(), options, ErrorListener });
+        var dataUrlBytes = await InvokeStream("toDataUrl", options, cancellationToken, target, format.ToJsName(), options, ErrorListener);
+        return DecodeText(dataUrlBytes);
     }
 
-    private async Task<byte[]> CaptureBytes(object target, CaptureFormat format, HtmlToImageOptions? options, CancellationToken cancellationToken)
+    /// <summary>
+    /// Decodes a text result, dropping the UTF-8 byte-order mark the interop puts in front of it so
+    /// that even an empty string is a non-empty stream.
+    /// </summary>
+    private static string DecodeText(byte[] textBytes)
+    {
+        var byteOrderMark = Encoding.UTF8.Preamble;
+        var text = textBytes.AsSpan();
+        if (text.StartsWith(byteOrderMark))
+        {
+            text = text[byteOrderMark.Length..];
+        }
+
+        return Encoding.UTF8.GetString(text);
+    }
+
+    private Task<byte[]> CaptureBytes(object target, CaptureFormat format, HtmlToImageOptions? options, CancellationToken cancellationToken)
+    {
+        return InvokeStream("toStream", options, cancellationToken, target, format.ToJsName(), options, ErrorListener);
+    }
+
+    /// <summary>
+    /// Calls an interop function that answers with a Blob and reads it as a stream. Every result goes
+    /// this way, text included: on Blazor Server a plain result crosses SignalR as one message capped
+    /// at 32 KB by default, and a larger one closes the circuit.
+    /// </summary>
+    private async Task<byte[]> InvokeStream(string identifier, HtmlToImageOptions? options, CancellationToken cancellationToken, params object?[] args)
     {
         var module = await GetModule(cancellationToken);
-        await using var streamReference = await module.InvokeAsync<IJSStreamReference>(
-            "toStream", cancellationToken, new object?[] { target, format.ToJsName(), options, ErrorListener });
+        await using var streamReference = await module.InvokeAsync<IJSStreamReference>(identifier, cancellationToken, args);
 
         var maxResultBytes = options?.MaxResultBytes ?? _defaultMaxResultBytes;
         await using var stream = await streamReference.OpenReadStreamAsync(maxResultBytes, cancellationToken);

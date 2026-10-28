@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
@@ -101,6 +102,54 @@ public class HtmlToImageServiceTests
         await streamReference.Received(1).OpenReadStreamAsync(defaultMaxResultBytes, Arg.Any<CancellationToken>());
     }
 
+    public static TheoryData<string> TextCaptures()
+    {
+        return new TheoryData<string>
+        {
+            nameof(IHtmlToImageService.ToPngAsync),
+            nameof(IHtmlToImageService.ToJpegAsync),
+            nameof(IHtmlToImageService.ToSvgAsync),
+            nameof(IHtmlToImageService.GetFontEmbedCssAsync),
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(TextCaptures))]
+    public async Task TextCapture_AnyResult_IsReadFromAStreamRatherThanOneInteropMessage(string captureName)
+    {
+        // Arrange
+        // On Blazor Server a JS result crosses SignalR as one message capped at 32 KB, and a larger one
+        // closes the circuit. Data URLs and embedded font CSS are routinely megabytes, so they have to
+        // come back the way the byte captures do - as a stream.
+        const string dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        StubCapturedStream(Encoding.UTF8.GetBytes(dataUrl));
+        var htmlToImageService = new HtmlToImageService(_jsRuntime);
+
+        // Act
+        var result = await (Task<string>)Capture(htmlToImageService, captureName, false, CancellationToken.None);
+
+        // Assert
+        result.ShouldBe(dataUrl);
+    }
+
+    [Theory]
+    [MemberData(nameof(TextCaptures))]
+    public async Task TextCapture_ResultBehindAByteOrderMark_ReturnsTheTextWithoutTheMark(string captureName)
+    {
+        // Arrange
+        // The interop prefixes every text result with a UTF-8 byte-order mark: Blazor cannot stream
+        // zero bytes, and an empty string is a valid answer - font CSS for a page with no web fonts.
+        byte[] byteOrderMark = [0xEF, 0xBB, 0xBF];
+        StubCapturedStream(byteOrderMark);
+        var htmlToImageService = new HtmlToImageService(_jsRuntime);
+
+        // Act
+        var result = await (Task<string>)Capture(htmlToImageService, captureName, false, CancellationToken.None);
+
+        // Assert
+        result.ShouldBeEmpty();
+    }
+
     public static TheoryData<string, bool> Captures()
     {
         var captures = new TheoryData<string, bool>();
@@ -195,16 +244,17 @@ public class HtmlToImageServiceTests
     }
 
     /// <summary>
-    /// Imports a module whose byte capture returns a stream reference over three bytes, and returns
-    /// that reference so the test can inspect how it was read.
+    /// Imports a module whose captures return a stream reference over <paramref name="content"/> -
+    /// three arbitrary bytes by default - and returns that reference so the test can inspect how it
+    /// was read.
     /// </summary>
-    private IJSStreamReference StubCapturedStream()
+    private IJSStreamReference StubCapturedStream(byte[]? content = null)
     {
         var module = Substitute.For<IJSObjectReference>();
         StubImport(new ValueTask<IJSObjectReference>(module));
         var streamReference = Substitute.For<IJSStreamReference>();
         streamReference.OpenReadStreamAsync(Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<Stream>(new MemoryStream([1, 2, 3])));
+            .Returns(_ => new ValueTask<Stream>(new MemoryStream(content ?? [1, 2, 3])));
         module.InvokeAsync<IJSStreamReference>(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<object?[]?>())
             .Returns(new ValueTask<IJSStreamReference>(streamReference));
         return streamReference;

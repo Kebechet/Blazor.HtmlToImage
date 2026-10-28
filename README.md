@@ -64,7 +64,13 @@ var dataUrl = await _htmlToImage.ToPngAsync("poster");
 
 ### Data URL vs. bytes
 
-`ToPngAsync` returns a `data:image/png;base64,...` string, matching upstream. `ToPngBytesAsync` returns `byte[]` and **streams** the image over JS interop instead of marshalling base64. Prefer the bytes overload for anything you intend to upload or save: a poster at `PixelRatio = 3` is several megabytes, and a data URL carries it as one JSON string - roughly 33% larger and fully buffered on both sides.
+`ToPngAsync` returns a `data:image/png;base64,...` string, matching upstream. `ToPngBytesAsync` returns the raw `byte[]`. Prefer the bytes overload for anything you intend to upload or save: a poster at `PixelRatio = 3` is several megabytes, and a data URL is the same image as base64 text - roughly 33% larger.
+
+Both come back over a JS interop **stream**, never as a single interop message - which matters on Blazor Server, where one message is capped at 32 KB by default and a larger one closes the circuit. The largest result a capture may return is `MaxResultBytes` (default 32 MB).
+
+### Hosting models
+
+Blazor WebAssembly, Blazor Server (interactive server render mode) and Blazor Hybrid (MAUI `BlazorWebView`). The browser suite runs captures in a WebAssembly app and in a Server app pinned to SignalR's default 32 KB message limit; MAUI is verified on devices by hand.
 
 ### Excluding elements from the capture
 

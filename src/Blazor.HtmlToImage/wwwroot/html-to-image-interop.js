@@ -148,6 +148,14 @@ function buildFilter(excludeCssClasses, excludeSelector) {
 	};
 }
 
+/**
+ * ImageLoadFailed carries at most this much of the failed image's source. Upstream reports an image
+ * whose bytes do not decode as a data URL of those bytes, routinely larger than the 32 KB message
+ * that carries the event on Blazor Server - and an oversized message closes the circuit. The media
+ * type and first bytes at the start are what identify the image.
+ */
+const MAX_REPORTED_IMAGE_SOURCE_LENGTH = 2048;
+
 function withoutUnsetMembers(source) {
 	const result = {};
 	for (const [key, value] of Object.entries(source)) {
@@ -190,15 +198,33 @@ function buildOptions(options, errorListener) {
 	// reference and therefore pays no interop cost per failed image.
 	if (errorListener) {
 		result.onImageErrorHandler = (event) => {
-			const url = event?.target?.src ?? event?.currentTarget?.src ?? String(event ?? '');
-			errorListener.invokeMethodAsync('OnImageLoadFailed', url);
+			const imageSource = event?.target?.src ?? event?.currentTarget?.src ?? String(event ?? '');
+			errorListener.invokeMethodAsync('OnImageLoadFailed', imageSource.slice(0, MAX_REPORTED_IMAGE_SOURCE_LENGTH))
+				// Fire-and-forget: a scope torn down mid-capture disposes the reference, and that
+				// rejection must not surface as an unhandled one.
+				.catch(() => {});
 		};
 	}
 
 	return result;
 }
 
+/**
+ * Text results - data URLs, font CSS - go back as a Blob that .NET reads as a stream, never as a
+ * string result. On Blazor Server a string result crosses SignalR as a single message, capped at
+ * 32 KB by default, and a larger one closes the whole circuit; a data URL is routinely megabytes.
+ * The leading byte-order mark keeps the Blob non-empty: Blazor refuses to stream zero bytes, and an
+ * empty string is a valid answer (font CSS for a page with no web fonts). .NET strips it again.
+ */
+function asTextBlob(text) {
+	return new Blob(['﻿', text], { type: 'text/plain;charset=utf-8' });
+}
+
 export async function toDataUrl(target, format, options, errorListener) {
+	return asTextBlob(await captureDataUrl(target, format, options, errorListener));
+}
+
+async function captureDataUrl(target, format, options, errorListener) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
 	const resolvedOptions = buildOptions(options, errorListener);
@@ -289,7 +315,8 @@ export async function getFontEmbedCss(target, options, errorListener) {
 	const library = await getLibrary();
 	const node = resolveNode(target);
 	const settings = captureSettings(options);
-	return await withCaptureTimeout(library.getFontEmbedCSS(node, buildOptions(options, errorListener)), settings.captureTimeoutMs, 'getFontEmbedCSS');
+	const fontCss = await withCaptureTimeout(library.getFontEmbedCSS(node, buildOptions(options, errorListener)), settings.captureTimeoutMs, 'getFontEmbedCSS');
+	return asTextBlob(fontCss);
 }
 
 /**

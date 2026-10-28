@@ -11,9 +11,10 @@ namespace Kebechet.Blazor.HtmlToImage;
 /// <see cref="ElementReference"/> one: it is checked by the compiler and survives an id rename,
 /// whereas an id is resolved at call time and throws when nothing matches.
 /// <para>
-/// The <c>*BytesAsync</c> methods stream the image over JS interop rather than marshalling a
-/// base64 data URL. A poster captured at <c>PixelRatio = 3</c> is several megabytes, and a data URL
-/// carries it as a single JSON string - roughly 33% larger and fully buffered on both sides.
+/// Every result - data URLs and font CSS included - comes back over a JS interop stream rather than
+/// as one interop message, so none of them is bound by Blazor Server's 32 KB message limit. Prefer
+/// the <c>*BytesAsync</c> methods for anything you upload or save: a data URL is the same image as
+/// base64 text, roughly 33% larger.
 /// </para>
 /// <para>
 /// Cancelling the token stops the caller waiting; it does not stop the browser. html-to-image has
@@ -96,14 +97,24 @@ public interface IHtmlToImageService
     Task<IJSObjectReference> ToCanvasAsync(string elementId, HtmlToImageOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Raised for every image that fails to load during a capture, carrying the URL that failed.
+    /// Raised for every image that fails to load during a capture, carrying the source that failed.
     /// </summary>
     /// <remarks>
     /// Upstream exposes this as the <c>onImageErrorHandler</c> option - a JavaScript callback, which
     /// cannot be modelled as an option value. It is surfaced as an event instead, wired through a
     /// <c>DotNetObjectReference</c> only while something is subscribed, so an unsubscribed capture
-    /// pays no interop cost. Pair it with <see cref="HtmlToImageOptions.ImagePlaceholder"/> to both
-    /// see and paper over the failure.
+    /// pays no interop cost.
+    /// <para>
+    /// The source is what upstream had assigned to the cloned image when it failed: for an image
+    /// whose bytes do not decode that is a data URL of those bytes, not the original URL. Only its
+    /// first 2048 characters are sent - enough for the media type and the first bytes that identify
+    /// it, and small enough for one Blazor Server message.
+    /// </para>
+    /// <para>
+    /// <see cref="HtmlToImageOptions.ImagePlaceholder"/> replaces an image whose fetch failed before
+    /// it reaches the clone, so with a placeholder set this event reports only images whose bytes
+    /// were fetched and then did not decode.
+    /// </para>
     /// </remarks>
     event Action<string>? ImageLoadFailed;
 }

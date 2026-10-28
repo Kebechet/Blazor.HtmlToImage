@@ -1,0 +1,144 @@
+@page "/"
+@implements IDisposable
+@inject IHtmlToImageService _htmlToImage
+
+@* 600 distinctly coloured, numbered cells: every data URL of this grid is far larger than one SignalR
+   message, so a capture that returns it as a single interop result disconnects the circuit. *@
+<div @ref="_grid" style="display: grid; grid-template-columns: repeat(30, 28px); gap: 2px; width: fit-content; padding: 8px; background: #101418;">
+    @foreach (var index in Enumerable.Range(0, CellCount))
+    {
+        <span style="@CellStyle(index)">@index</span>
+    }
+</div>
+
+@* The bytes behind this image are text, so it fetches fine and then fails to decode - the failure
+   ImageLoadFailed reports, carrying a data URL of those bytes that is larger than one message. *@
+<div @ref="_undecodablePoster" style="width: 80px; height: 60px; padding: 8px; background: #101418;">
+    <img src="img/not-an-image.png" width="32" height="32" alt="" />
+</div>
+
+@if (_isInteractive)
+{
+    <div data-testid="interactive"></div>
+}
+
+<button data-testid="png" @onclick="CapturePng">PNG data URL</button>
+<button data-testid="jpeg" @onclick="CaptureJpeg">JPEG data URL</button>
+<button data-testid="svg" @onclick="CaptureSvg">SVG data URL</button>
+<button data-testid="undecodable" @onclick="CaptureUndecodable">Undecodable image</button>
+
+<pre data-testid="state">@_stateJson</pre>
+
+@code {
+    private const int CellCount = 600;
+
+    private static readonly HtmlToImageOptions _options = new()
+    {
+        PixelRatio = 2,
+        StabilizeAttempts = 1,
+    };
+
+    private ElementReference _grid;
+    private ElementReference _undecodablePoster;
+    private bool _isInteractive;
+    private string _stateJson = "{}";
+    private readonly List<string> _failedImages = [];
+
+    protected override void OnInitialized()
+    {
+        _htmlToImage.ImageLoadFailed += OnImageLoadFailed;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Runs only once the circuit is live, so the marker tells the tests the buttons now work.
+        if (firstRender)
+        {
+            _isInteractive = true;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _htmlToImage.ImageLoadFailed -= OnImageLoadFailed;
+    }
+
+    private void OnImageLoadFailed(string imageSource)
+    {
+        _failedImages.Add(imageSource);
+    }
+
+    private static string CellStyle(int index)
+    {
+        return $"display: flex; align-items: center; justify-content: center; height: 28px; font: 11px sans-serif; color: #fff; background: hsl({index * 37 % 360}, 70%, {35 + index % 30}%);";
+    }
+
+    private async Task CapturePng()
+    {
+        await CaptureDataUrl(() => _htmlToImage.ToPngAsync(_grid, _options), "data:image/png");
+    }
+
+    private async Task CaptureJpeg()
+    {
+        await CaptureDataUrl(() => _htmlToImage.ToJpegAsync(_grid, _options), "data:image/jpeg");
+    }
+
+    private async Task CaptureSvg()
+    {
+        await CaptureDataUrl(() => _htmlToImage.ToSvgAsync(_grid, _options), "data:image/svg+xml");
+    }
+
+    private async Task CaptureDataUrl(Func<Task<string>> capture, string expectedPrefix)
+    {
+        try
+        {
+            var dataUrl = await capture();
+            WriteState(new Dictionary<string, object?>
+            {
+                ["hasCaptured"] = true,
+                ["length"] = dataUrl.Length,
+                ["hasExpectedPrefix"] = dataUrl.StartsWith(expectedPrefix, StringComparison.Ordinal),
+                ["error"] = null,
+            });
+        }
+        catch (Exception exception)
+        {
+            WriteError(exception);
+        }
+    }
+
+    private async Task CaptureUndecodable()
+    {
+        try
+        {
+            var pngBytes = await _htmlToImage.ToPngBytesAsync(_undecodablePoster, _options);
+            WriteState(new Dictionary<string, object?>
+            {
+                ["hasCaptured"] = true,
+                ["length"] = pngBytes.Length,
+                ["failedImageCount"] = _failedImages.Count,
+                ["longestFailedImageLength"] = _failedImages.Select(x => x.Length).DefaultIfEmpty(0).Max(),
+                ["error"] = null,
+            });
+        }
+        catch (Exception exception)
+        {
+            WriteError(exception);
+        }
+    }
+
+    private void WriteError(Exception exception)
+    {
+        WriteState(new Dictionary<string, object?>
+        {
+            ["hasCaptured"] = false,
+            ["error"] = exception.Message,
+        });
+    }
+
+    private void WriteState(Dictionary<string, object?> state)
+    {
+        _stateJson = JsonSerializer.Serialize(state);
+    }
+}
