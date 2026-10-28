@@ -6,22 +6,63 @@
 <title>h2i-harness</title>
 <script>
 'use strict';
+const params = new URLSearchParams(location.search);
+const RUN_ID = params.get('run') || 'adhoc';
+const MODE = params.get('mode') || 'pipelines';
 const pendingReports = [];
+let isFlushing = false;
 function flushReports() {
+  if (isFlushing) return;
   if (!pendingReports.length) return;
+  isFlushing = true;
   const body = pendingReports[0];
   fetch('/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
     .then(function (response) {
+      isFlushing = false;
       if (response.ok || response.status === 204) {
         pendingReports.shift();
         flushReports();
       }
     })
-    .catch(function () { /* retried by the interval */ });
+    .catch(function () { isFlushing = false; });
 }
-setInterval(flushReports, 5000);
+async function flushNow() {
+  const deadline = Date.now() + 10000;
+  while (pendingReports.length && Date.now() < deadline) {
+    flushReports();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+/// Every decode() call is counted per phase and image kind, with its outcome. This is the
+/// measurement behind "does WebKit reject decode() during captures": the wrapper returns the
+/// original promise, so behaviour is unchanged.
+let currentPhase = 'boot';
+const decodeStats = {};
+function imageKind(src) {
+  if (src.startsWith('data:image/svg')) return 'svg-data-url';
+  if (src.startsWith('data:image/')) return 'bitmap-data-url';
+  if (src.startsWith('blob:')) return 'bitmap-blob';
+  return 'url';
+}
+const originalDecode = HTMLImageElement.prototype.decode;
+HTMLImageElement.prototype.decode = function () {
+  const key = currentPhase + ' ' + imageKind(this.currentSrc || this.src || '');
+  const stats = decodeStats[key] || (decodeStats[key] = { calls: 0, resolved: 0, rejected: 0, rejections: [] });
+  stats.calls++;
+  const promise = originalDecode.call(this);
+  promise.then(function () { stats.resolved++; }, function (error) {
+    stats.rejected++;
+    if (stats.rejections.length < 5) stats.rejections.push(String(error && error.name) + ': ' + String(error && error.message));
+  });
+  return promise;
+};
+setInterval(flushReports, 2000);
 function report(payload) {
   try {
+    payload.run = RUN_ID;
+    payload.mode = MODE;
+    payload.t = Date.now();
     pendingReports.push(JSON.stringify(payload));
     flushReports();
   } catch (e) { /* reporting must never throw */ }
@@ -119,8 +160,9 @@ function softTimeout(promise, ms) {
   return Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms))]);
 }
 
-/// decode() may reject spuriously under memory pressure, and load may already have finished -
-/// so never rely on either alone, and never let a fixture wait block the run.
+/// Load may already have finished, and a fixture wait must never block the run: a decode() failure
+/// is ignored and the wait is bounded. No decode() of a loaded image rejected in any device run
+/// (see decodeStats in the results); the guard only keeps a run from dying on one.
 function whenImageReady(img) {
   const loaded = img.complete
     ? Promise.resolve()
@@ -271,10 +313,13 @@ function recordFailure(pipeline, phase, error) {
 async function runPipeline(name, capture) {
   report({ stage: 'phase', pipeline: name });
   setStatus('running ' + name + ' cold');
+  currentPhase = 'fixtures';
   await setFixtureSources(name + '-' + Date.now());
   try {
     const coldStart = performance.now();
+    currentPhase = name + '/cold';
     const coldResult = await withTimeout(capture(), name + '-cold');
+    currentPhase = 'sampling';
     results.push({ pipeline: name, phase: 'meta', fixture: '_ms-cold', expected: '', got: String(Math.round(performance.now() - coldStart)), verdict: 'PASS' });
     if (coldResult.first !== undefined) {
       await sampleVerdicts(coldResult.first, name, 'cold-first');
@@ -288,7 +333,9 @@ async function runPipeline(name, capture) {
   }
   setStatus('running ' + name + ' warm');
   try {
+    currentPhase = name + '/warm';
     const warmResult = await withTimeout(capture(), name + '-warm');
+    currentPhase = 'sampling';
     await sampleVerdicts(warmResult.dataUrl !== undefined ? warmResult.dataUrl : warmResult, name, 'warm');
   } catch (error) {
     recordFailure(name, 'warm', error);
@@ -305,20 +352,180 @@ async function runAll() {
     ['v13-decodewait', () => decodeWaitCapture(window.h2i_v13, root, opts)],
     ['pkg-interop', async () => {
       const interopModule = await import('./html-to-image-interop.js');
-      return interopModule.toDataUrl(root, 'png', { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', skipFonts: true }, null);
+      return interopText(await interopModule.toDataUrl(root, 'png', { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', skipFonts: true }, null));
     }],
   ];
   for (const entry of pipelines) {
     await runPipeline(entry[0], entry[1]);
-    report({ stage: 'progress', pipeline: entry[0], results });
+    report({ stage: 'progress', pipeline: entry[0], results, decodeStats });
   }
   const blanks = results.filter(x => x.verdict === 'BLANK').length;
   const errors = results.filter(x => x.verdict === 'ERROR' || x.verdict === 'TIMEOUT').length;
   const others = results.filter(x => x.verdict === 'OTHER').length;
   const summary = 'DONE blank=' + blanks + ' error=' + errors + ' other=' + others;
   renderReport();
-  report({ stage: 'results', userAgent: navigator.userAgent, summary, results });
+  report({ stage: 'results', userAgent: navigator.userAgent, summary, results, decodeStats });
   setStatus(summary);
+}
+
+/// From 1.11.13.3 the interop returns data URLs as a BOM-prefixed text Blob (so Blazor Server can
+/// stream them); 1.11.13.2 returned the string itself.
+async function interopText(result) {
+  if (typeof result === 'string') return result;
+  return (await result.text()).replace(/^﻿/, '');
+}
+
+async function makeNoisePngBlob(size, seed) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.createImageData(size, size);
+  const data = imageData.data;
+  let state = seed >>> 0;
+  for (let i = 0; i < data.length; i += 4) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    data[i] = state & 255;
+    data[i + 1] = (state >> 8) & 255;
+    data[i + 2] = (state >> 16) & 255;
+    data[i + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  canvas.width = 0;
+  canvas.height = 0;
+  return blob;
+}
+
+function decodeOutcome(img) {
+  return img.decode().then(() => 'resolved', error => 'rejected ' + String(error && error.name) + ': ' + String(error && error.message));
+}
+
+function whenLoaded(img) {
+  return new Promise(resolve => {
+    if (img.complete && img.naturalWidth) { resolve('loaded'); return; }
+    img.onload = () => resolve('loaded');
+    img.onerror = () => resolve('load-error');
+  });
+}
+
+/// Raises memory pressure step by step: each held image is a distinct blob URL of the same
+/// 2048x2048 noise PNG, so WebKit keeps a separate decoded bitmap per image. At each step it
+/// records decode() outcomes for the newly added bitmaps, for the capture's own SVG, and runs a
+/// stock 1.11.13 capture. A localStorage guard stops a crash-reload from re-running the escalation.
+async function runStress() {
+  const guardKey = 'stress-started-' + (params.get('token') || 'none');
+  if (localStorage.getItem(guardKey)) {
+    report({ stage: 'stress-skipped-reload-after-start' });
+    setStatus('STRESS SKIPPED (page reloaded after start)');
+    return;
+  }
+  localStorage.setItem(guardKey, '1');
+  const opts = { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', skipFonts: true };
+  currentPhase = 'fixtures';
+  await setFixtureSources('stress-' + Date.now());
+  currentPhase = 'stress-svg-source';
+  const svgDataUrl = await window.h2i_v13.toSvg(root, opts);
+  const bitmapBlob = await makeNoisePngBlob(2048, 12345);
+  report({ stage: 'stress-ready', svgChars: svgDataUrl.length, bitmapPngBytes: bitmapBlob.size, bitmapPixels: '2048x2048' });
+  await flushNow();
+  const heldImages = [];
+  const steps = (params.get('steps') || '0,8,16,32,48,64,96,128,160,192').split(',').map(Number);
+  for (const target of steps) {
+    setStatus('stress step ' + target);
+    currentPhase = 'stress-bitmaps-' + target;
+    const freshImages = [];
+    while (heldImages.length < target) {
+      const img = new Image();
+      img.src = URL.createObjectURL(bitmapBlob);
+      heldImages.push(img);
+      freshImages.push(img);
+    }
+    const bitmapOutcomes = await Promise.all(freshImages.map(img => whenLoaded(img).then(load => load === 'loaded' ? decodeOutcome(img) : load)));
+    const bitmapOutcomeCounts = {};
+    for (const outcome of bitmapOutcomes) bitmapOutcomeCounts[outcome] = (bitmapOutcomeCounts[outcome] || 0) + 1;
+
+    currentPhase = 'stress-svg-' + target;
+    const svgOutcomes = [];
+    for (let i = 0; i < 3; i++) {
+      const svgImage = new Image();
+      svgImage.src = svgDataUrl;
+      const load = await whenLoaded(svgImage);
+      svgOutcomes.push(load === 'loaded' ? await decodeOutcome(svgImage) : load);
+    }
+
+    currentPhase = 'stress-capture-' + target;
+    const captureStart = performance.now();
+    let captureOutcome;
+    let blankCount = null;
+    try {
+      const png = await Promise.race([
+        window.h2i_v13.toPng(root, opts),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT after 60000 ms')), 60000)),
+      ]);
+      captureOutcome = 'resolved';
+      currentPhase = 'sampling';
+      results.length = 0;
+      await sampleVerdicts(png, 'stress', 'step-' + target);
+      blankCount = results.filter(x => x.verdict === 'BLANK').length;
+    } catch (error) {
+      captureOutcome = 'failed ' + String(error && error.message || error).substring(0, 160);
+    }
+    report({
+      stage: 'stress-step',
+      heldBitmaps: heldImages.length,
+      freshBitmapDecodeOutcomes: bitmapOutcomeCounts,
+      svgDecodeOutcomes: svgOutcomes,
+      captureOutcome,
+      captureMs: Math.round(performance.now() - captureStart),
+      captureBlankFixtures: blankCount,
+    });
+    await flushNow();
+  }
+  report({ stage: 'stress-done', decodeStats });
+  await flushNow();
+  setStatus('STRESS DONE');
+}
+
+/// Runs captures back to back through the package's interop module, one attempt each, while the
+/// driver sends Safari to the background and back. A 250 ms heartbeat shows whether JavaScript
+/// kept running while hidden; each capture records when it started and settled.
+async function runBackground() {
+  currentPhase = 'fixtures';
+  await setFixtureSources('background-' + Date.now());
+  const interopModule = await import('./html-to-image-interop.js');
+  const visibilityEvents = [];
+  document.addEventListener('visibilitychange', () => visibilityEvents.push({ t: Date.now(), state: document.visibilityState }));
+  const heartbeats = [];
+  const heartbeat = setInterval(() => heartbeats.push(Date.now()), 250);
+  const captures = [];
+  const until = Date.now() + Number(params.get('seconds') || 90) * 1000;
+  setStatus('BACKGROUND LOOP RUNNING');
+  report({ stage: 'background-loop-started' });
+  await flushNow();
+  while (Date.now() < until) {
+    const capture = { start: Date.now(), visibilityAtStart: document.visibilityState };
+    currentPhase = 'background-capture';
+    try {
+      const dataUrl = await interopText(await interopModule.toDataUrl(root, 'png', { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', skipFonts: true, stabilizeAttempts: 1, captureTimeoutMs: 30000 }, null));
+      capture.outcome = 'ok ' + dataUrl.length;
+    } catch (error) {
+      capture.outcome = 'error ' + String(error && error.message || error).substring(0, 160);
+    }
+    capture.end = Date.now();
+    capture.visibilityAtEnd = document.visibilityState;
+    captures.push(capture);
+  }
+  clearInterval(heartbeat);
+  const heartbeatGaps = [];
+  for (let i = 1; i < heartbeats.length; i++) {
+    if (heartbeats[i] - heartbeats[i - 1] > 2000) {
+      heartbeatGaps.push({ from: heartbeats[i - 1], to: heartbeats[i], ms: heartbeats[i] - heartbeats[i - 1] });
+    }
+  }
+  report({ stage: 'background-done', captures, visibilityEvents, heartbeatGaps, heartbeatCount: heartbeats.length, decodeStats });
+  await flushNow();
+  setStatus('BACKGROUND DONE');
 }
 
 function renderReport() {
@@ -342,7 +549,13 @@ async function boot() {
     report({ stage: 'v13-loaded', ok: typeof window.h2i_v13 === 'object' });
 
     setStatus('ready');
-    await runAll();
+    if (MODE === 'stress') {
+      await runStress();
+    } else if (MODE === 'background') {
+      await runBackground();
+    } else {
+      await runAll();
+    }
   } catch (error) {
     const message = String(error && error.message || error);
     report({ stage: 'boot-failed', message });

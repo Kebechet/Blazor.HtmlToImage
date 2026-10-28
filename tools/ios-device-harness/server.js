@@ -5,6 +5,9 @@ const path = require('path');
 
 const PORT = 9099;
 const rootDir = __dirname;
+// The page imports the package's interop module, served from its source so the harness always
+// measures the code that ships.
+const aliases = { '/html-to-image-interop.js': path.join(rootDir, '..', '..', 'src', 'Blazor.HtmlToImage', 'wwwroot', 'html-to-image-interop.js') };
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 const server = http.createServer((req, res) => {
@@ -21,8 +24,9 @@ const server = http.createServer((req, res) => {
     return;
   }
   const urlPath = decodeURIComponent(req.url.split('?')[0]);
-  const filePath = path.normalize(path.join(rootDir, urlPath === '/' ? 'index.html' : urlPath));
-  if (!filePath.startsWith(rootDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  const aliasPath = aliases[urlPath];
+  const filePath = aliasPath || path.normalize(path.join(rootDir, urlPath === '/' ? 'index.html' : urlPath));
+  if ((!aliasPath && !filePath.startsWith(rootDir)) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404, { 'Cache-Control': 'no-store' });
     res.end('not found');
     return;
