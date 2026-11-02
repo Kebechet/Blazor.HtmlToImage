@@ -138,6 +138,16 @@ https://github.com/bubkoo/html-to-image/pull/589 and the stabilisation loop as a
 release contains 589, the timeout stays as a plain safety bound; once it contains 591, the interop's
 `captureStable` loop can be replaced by forwarding `StabilizeAttempts` to upstream's option.
 
+## Patched html-to-image
+
+The vendored `html-to-image.js` is the official 1.11.13 build plus one change: the fix proposed in [html-to-image pull request 602](https://github.com/bubkoo/html-to-image/pull/602) for [html-to-image issue 601](https://github.com/bubkoo/html-to-image/issues/601), carried until an html-to-image release includes it. A banner comment on the bundle's first line marks it.
+
+**What it changes.** A response that sends its `Content-Type` header twice reaches `fetch()` as one comma-joined value, such as `image/png, image/png`. html-to-image 1.11.13 split the resulting data URL on its first comma, so it embedded ` image/png;base64` instead of the image data, the image failed to load and the capture rejected with a bare `[object Event]`. The patched bundle keeps the first media type. Responses with a single `Content-Type` are unaffected.
+
+**Where it matters.** .NET MAUI's BlazorWebView on Android sends `Content-Type` twice for every static file it serves to the WebView, so on Android any capture containing one of the app's own images failed. Only Chromium engines (desktop Chrome, Android WebView) keep the comma-joined value; WebKit parses it to a single media type, so iOS and Safari were never affected.
+
+The patch is removed once an html-to-image release contains the fix. Until then, `VendoredBundleTests` fails if a bundle upgrade drops it, and `PatchedLibraryTests` captures an image served that way in a real browser.
+
 ## Coverage vs. html-to-image 1.11.13
 
 **Complete.** Every upstream entry point is reachable, and so is every option those entry points read.
@@ -185,12 +195,13 @@ This is upstream's own resolution path, not wrapper behaviour: html-to-image's `
 
 | | |
 |---|---|
-| Version | html-to-image 1.11.13 |
+| Version | html-to-image 1.11.13, plus the patch in [Patched html-to-image](#patched-html-to-image) |
 | File | `wwwroot/html-to-image.js` |
 | Source | npm tarball `html-to-image-1.11.13.tgz`, `package/dist/html-to-image.js` |
-| SHA-256 | `a90b42909d80964269ef6d5f3d1e4a5a7e2a4c263a5d2a76a9e7151901343262` |
+| SHA-256 of the official file | `a90b42909d80964269ef6d5f3d1e4a5a7e2a4c263a5d2a76a9e7151901343262` |
+| SHA-256 of the shipped file | `2e57a1a1d562f677adb7469006b6a4b9d8f5bed4646c6b882ae0956e4d7e87a8` |
 
-The npm `dist` build is already minified - jsDelivr reports "skipped minification" for it - so it is vendored verbatim rather than re-minified, and the hash above verifies byte-for-byte against the tarball.
+The npm `dist` build is already minified - jsDelivr reports "skipped minification" for it - so it is vendored as is rather than re-minified. The official hash verifies byte-for-byte against the tarball; the shipped file differs from it only by the banner line and the patch.
 
 ## Versioning
 
